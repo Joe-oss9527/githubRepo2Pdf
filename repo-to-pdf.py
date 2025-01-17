@@ -246,7 +246,7 @@ class RepoPDFConverter:
         
         yaml_config = {
             'pdf-engine': 'xelatex',
-            'highlight-style': pdf_config.get('highlight_style', 'monochrome'),
+            'highlight-style': pdf_config.get('highlight_style', 'tango'),
             'variables': {
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
@@ -267,23 +267,25 @@ class RepoPDFConverter:
                 'urlcolor': 'blue',
                 # LaTeX 设置
                 'header-includes': [
+                    # 加载必要的包
+                    '\\usepackage{xeCJK}',
                     '\\usepackage{fvextra}',
+                    '\\usepackage[most]{tcolorbox}',  # 加载完整的 tcolorbox
+                    # 代码块设置
                     '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
                     '\\fvset{breaklines=true, breakanywhere=true}',
+                    # 代码框设置
+                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
+                    # 标题和段落设置
                     '\\setlength{\\headheight}{15pt}',
-                    # 调整代码块设置
-                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,size=minimal,boxrule=0pt]}{\\end{tcolorbox}}',
-                    '\\usepackage[breakable]{tcolorbox}',
-                    # 中英文混排优化
-                    '\\usepackage{xeCJK}',
-                    # 设置 CJK 字体
+                    # 中文字体设置
                     '\\setCJKmainfont[BoldFont={Songti SC Bold},ItalicFont={Songti SC Light}]{Songti SC}',
                     '\\setCJKsansfont[BoldFont={PingFang SC Semibold},ItalicFont={PingFang SC Light}]{PingFang SC}',
                     '\\setCJKmonofont{STFangsong}',
                     # 中文断行设置
                     '\\XeTeXlinebreaklocale "zh"',
                     '\\XeTeXlinebreakskip = 0pt plus 1pt',
-                    # 设置标题字体
+                    # 标题字体设置
                     '\\usepackage{sectsty}',
                     '\\sectionfont{\\CJKfamily{sf}}',
                     '\\subsectionfont{\\CJKfamily{sf}}'
@@ -341,7 +343,7 @@ class RepoPDFConverter:
                 '--wrap=none',
                 '-V', 'geometry:margin=0.5in',
                 '-V', 'fontsize=10pt',
-                '--highlight-style=monochrome',
+                '--highlight-style=tango',
                 '--resource-path=.',
                 '--standalone',
                 # LaTeX 设置
@@ -350,9 +352,7 @@ class RepoPDFConverter:
                 # 优化设置
                 '--pdf-engine-opt=-halt-on-error',
                 '--pdf-engine-opt=-interaction=nonstopmode',
-                # 增加 TeX 内存
-                '--pdf-engine-opt=-extra-mem-top=10000000',
-                '--pdf-engine-opt=-extra-mem-bot=10000000',
+                # 移除内存设置，因为格式不正确
                 '-o', str(output_pdf),
                 str(temp_md)
             ]
