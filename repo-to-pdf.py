@@ -166,13 +166,50 @@ class RepoPDFConverter:
                 # 跳过包含 SVG 的文件
                 if '<svg' in content:
                     return ""
+                    
+                # 对于 package.json 和 package-lock.json 文件不使用高亮
+                if file_path.name in ['package.json', 'package-lock.json', 'yarn.lock']:
+                    return f"\n\n# {rel_path}\n\n```\n{content}\n```\n\n"
+                    
+                # 对于其他文件使用语言高亮
                 lang = self.code_extensions[ext]
+                # 处理长字符串，将它们分割成多行
+                content = self._process_long_lines(content)
                 return f"\n\n# {rel_path}\n\n```{lang}\n{content}\n```\n\n"
                 
             return ""
         except UnicodeDecodeError:
             logger.debug(f"跳过二进制文件: {file_path}")
             return ""
+            
+    def _process_long_lines(self, content: str, max_length: int = 100) -> str:
+        """处理长行，将它们分割成多行"""
+        lines = []
+        for line in content.splitlines():
+            if len(line) > max_length:
+                # 对于包含长字符串的行进行特殊处理
+                if '"' in line or "'" in line:
+                    line = self._break_long_strings(line)
+            lines.append(line)
+        return '\n'.join(lines)
+        
+    def _break_long_strings(self, line: str) -> str:
+        """处理包含长字符串的行"""
+        import re
+        # 查找长字符串（包括包名和版本号）
+        pattern = r'["\']([^"\']{100,})["\']'
+        
+        def replacer(match):
+            # 将长字符串每隔 80 个字符添加换行和适当的缩进
+            s = match.group(1)
+            indent = ' ' * (len(line) - len(line.lstrip()))
+            parts = [s[i:i+80] for i in range(0, len(s), 80)]
+            if len(parts) > 1:
+                quote = match.group(0)[0]  # 获取原始引号
+                return f'{quote}\\\n{indent}'.join(parts) + quote
+            return match.group(0)
+            
+        return re.sub(pattern, replacer, line)
 
     def create_pandoc_yaml(self) -> Path:
         """创建 Pandoc 的 YAML 配置文件"""
@@ -180,6 +217,8 @@ class RepoPDFConverter:
         
         yaml_config = {
             'pdf-engine': 'xelatex',
+            # 添加代码高亮设置
+            'highlight-style': pdf_config.get('highlight_style', 'tango'),
             'variables': {
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
@@ -244,7 +283,8 @@ class RepoPDFConverter:
                 '-V', 'geometry:margin=0.5in',
                 '-V', 'CJKmainfont=Songti SC',
                 '-V', 'fontsize=10pt',
-                '--no-highlight',
+                # 启用代码高亮
+                '--highlight-style=tango',  # 使用 tango 主题
                 '--resource-path=.',
                 '--standalone',
                 # 简化 LaTeX 设置

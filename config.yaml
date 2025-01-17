@@ -12,12 +12,28 @@ pdf_settings:
   margin: "margin=1in"
   main_font: "Songti SC"
   mono_font: "SF Mono"
+  highlight_style: "monochrome"
 
 # 忽略的文件或目录
 ignores:
+  # 依赖和构建相关
   - "node_modules"
   - "dist"
   - "build"
+  - "coverage"
+  - ".next"
+  - ".nuxt"
+  - "vendor"
+  
+  # 锁定文件
+  - "package-lock.json"
+  - "yarn.lock"
+  - "pnpm-lock.yaml"
+  - "composer.lock"
+  - "Gemfile.lock"
+  - "poetry.lock"
+  
+  # 缓存和临时文件
   - ".git"
   - "__pycache__"
   - "*.pyc"
@@ -25,3 +41,15 @@ ignores:
   - "*.pyd"
   - ".DS_Store"
   - "*.log"
+  - ".cache"
+  - ".temp"
+  - "tmp"
+  
+  # IDE 和编辑器
+  - ".idea"
+  - ".vscode"
+  - "*.swp"
+  - "*.swo"
+  - ".project"
+  - ".settings"
+  
