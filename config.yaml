@@ -1,31 +1,27 @@
 # 仓库配置
 repository:
   url: "https://github.com/TanStack/router.git"
-  branch: "main"  # 可选，默认为 main
+  branch: "main"
 
-# 工作目录，用于克隆仓库
-workspace_dir: "~/repo-workspace"
-
-# PDF 输出目录
-output_dir: "~/repo-pdfs"
-
-# 忽略的文件或目录（支持部分匹配）
-ignores:
-  - "node_modules"
-  - "venv"
-  - "dist"
-  - ".git"
-  - "__pycache__"
-  - "test"
-  - ".env"
+# 所有路径都相对于项目根目录
+workspace_dir: "./repo-workspace"
+output_dir: "./repo-pdfs"
 
 # PDF 设置
 pdf_settings:
-  # 代码高亮主题：tango, pygments, kate, monochrome, espresso, zenburn, haddock, breezedark
-  highlight_style: "tango"
-  # 页边距
   margin: "margin=1in"
-  # 字体设置
-  main_font: "Songti SC"      # 中文正文字体
-  sans_font: "PingFang SC"    # 中文标题字体
-  mono_font: "SF Mono"        # 等宽字体（代码）
+  main_font: "Songti SC"
+  mono_font: "SF Mono"
+
+# 忽略的文件或目录
+ignores:
+  - "node_modules"
+  - "dist"
+  - "build"
+  - ".git"
+  - "__pycache__"
+  - "*.pyc"
+  - "*.pyo"
+  - "*.pyd"
+  - ".DS_Store"
+  - "*.log"

@@ -6,6 +6,7 @@ venv/
 
 # 临时文件
 temp/
+repo-workspace/
 
 # 输出文件
 repo-pdfs/
@@ -13,3 +14,5 @@ repo-pdfs/
 # IDE
 .vscode/
 .idea/ 
+
+.DS_Store

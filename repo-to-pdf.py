@@ -46,11 +46,17 @@ class GitRepoManager:
 
 class RepoPDFConverter:
     def __init__(self, config_path: Path):
+        self.project_root = config_path.parent.absolute()
         self.config = self._load_config(config_path)
         self.temp_dir = None
-        self.workspace_dir = Path(self.config['workspace_dir']).expanduser()
-        # 添加项目根目录
-        self.project_root = config_path.parent
+        
+        # 确保所有路径都相对于项目根目录
+        self.workspace_dir = self.project_root / self.config['workspace_dir']
+        self.output_dir = self.project_root / self.config['output_dir']
+        
+        # 创建必要的目录
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # 支持的代码文件扩展名和对应的语言
         self.code_extensions = {
@@ -196,8 +202,7 @@ class RepoPDFConverter:
     def convert(self):
         """转换仓库内容为 PDF"""
         try:
-            # 确保工作目录存在
-            self.workspace_dir.mkdir(parents=True, exist_ok=True)
+            # 不需要创建工作目录，因为在初始化时已经创建
             
             # 克隆或更新仓库
             repo_manager = GitRepoManager(
@@ -210,11 +215,9 @@ class RepoPDFConverter:
             temp_md = self.create_temp_markdown()
             yaml_path = self.create_pandoc_yaml()
             
-            # 生成输出路径
+            # 生成输出路径（已经是相对于项目根目录）
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_dir = Path(self.config['output_dir']).expanduser()
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_pdf = output_dir / f"{repo_path.name}_{timestamp}.pdf"
+            output_pdf = self.output_dir / f"{repo_path.name}_{timestamp}.pdf"
             
             # 收集并处理所有文件
             with open(temp_md, 'w', encoding='utf-8') as out_file:
