@@ -32,6 +32,16 @@ ignores:
   - "composer.lock"
   - "Gemfile.lock"
   - "poetry.lock"
+  - "Cargo.lock"      # Rust
+  - "mix.lock"        # Elixir
+  - "deno.lock"       # Deno
+  - "bun.lockb"       # Bun
+  - "shrinkwrap.yaml" # npm
+  - "flake.lock"      # Nix
+  - "gradle.lockfile" # Gradle
+  - "Pipfile.lock"    # Python pipenv
+  - "pdm.lock"        # Python PDM
+  - "requirements.txt.lock" # Python pip-tools
   
   # 缓存和临时文件
   - ".git"

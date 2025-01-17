@@ -60,20 +60,49 @@ class RepoPDFConverter:
         
         # 支持的代码文件扩展名和对应的语言
         self.code_extensions = {
-            '.py': 'python',
+            # 前端相关
             '.js': 'javascript',
+            '.jsx': 'jsx',
+            '.ts': 'typescript',
+            '.tsx': 'tsx',
+            '.vue': 'vue',
+            '.svelte': 'svelte',
+            '.css': 'css',
+            '.scss': 'scss',
+            '.sass': 'sass',
+            '.less': 'less',
+            '.html': 'html',
+            '.json': 'json',
+            '.graphql': 'graphql',
+            '.gql': 'graphql',
+            
+            # 后端相关
+            '.py': 'python',
             '.java': 'java',
             '.cpp': 'cpp',
             '.c': 'c',
             '.go': 'go',
             '.rs': 'rust',
+            '.rb': 'ruby',
+            '.php': 'php',
+            '.cs': 'csharp',
+            
+            # 配置和脚本
             '.sh': 'bash',
+            '.bash': 'bash',
+            '.zsh': 'bash',
             '.sql': 'sql',
             '.yaml': 'yaml',
-            '.json': 'json',
-            '.html': 'html',
-            '.css': 'css',
-            '.md': 'markdown'
+            '.yml': 'yaml',
+            '.toml': 'toml',
+            '.xml': 'xml',
+            '.md': 'markdown',
+            '.mdx': 'mdx',
+            
+            # 其他
+            '.dockerfile': 'dockerfile',
+            '.env': 'dotenv',
+            '.ini': 'ini'
         }
         
         # 初始化 Markdown 转换器
@@ -217,18 +246,27 @@ class RepoPDFConverter:
         
         yaml_config = {
             'pdf-engine': 'xelatex',
-            # 添加代码高亮设置
-            'highlight-style': pdf_config.get('highlight_style', 'tango'),
+            'highlight-style': pdf_config.get('highlight_style', 'monochrome'),
             'variables': {
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
                 'mainfont': pdf_config.get('main_font', 'Songti SC'),
                 'mainfontoptions': ['BoldFont=Songti SC Bold'],
                 'monofont': pdf_config.get('mono_font', 'SF Mono'),
-                'monofontoptions': ['Scale=0.9'],
+                'monofontoptions': ['Scale=0.85'],  # 减小代码字体
                 'colorlinks': True,
                 'linkcolor': 'blue',
-                'urlcolor': 'blue'
+                'urlcolor': 'blue',
+                # 添加 LaTeX 设置
+                'header-includes': [
+                    '\\usepackage{fvextra}',
+                    '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
+                    '\\fvset{breaklines=true, breakanywhere=true}',
+                    '\\setlength{\\headheight}{15pt}',
+                    # 调整代码块设置
+                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,size=minimal,boxrule=0pt]}{\\end{tcolorbox}}',
+                    '\\usepackage[breakable]{tcolorbox}'
+                ]
             }
         }
         
@@ -276,23 +314,25 @@ class RepoPDFConverter:
                 '-f', 'markdown',
                 '-t', 'pdf',
                 '--defaults', str(yaml_path),
-                '--toc',  # 添加目录
+                '--toc',
                 '--toc-depth=2',
                 '--pdf-engine=xelatex',
                 '--wrap=none',
                 '-V', 'geometry:margin=0.5in',
                 '-V', 'CJKmainfont=Songti SC',
                 '-V', 'fontsize=10pt',
-                # 启用代码高亮
-                '--highlight-style=tango',  # 使用 tango 主题
+                '--highlight-style=monochrome',
                 '--resource-path=.',
                 '--standalone',
-                # 简化 LaTeX 设置
+                # LaTeX 设置
                 '-V', 'header-includes=\\usepackage{ragged2e}',
                 '-V', 'header-includes=\\AtBeginDocument{\\justifying}',
-                # 添加内存优化设置
+                # 优化设置
                 '--pdf-engine-opt=-halt-on-error',
                 '--pdf-engine-opt=-interaction=nonstopmode',
+                # 增加 TeX 内存
+                '--pdf-engine-opt=-extra-mem-top=10000000',
+                '--pdf-engine-opt=-extra-mem-bot=10000000',
                 '-o', str(output_pdf),
                 str(temp_md)
             ]
