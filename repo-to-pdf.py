@@ -250,14 +250,22 @@ class RepoPDFConverter:
             'variables': {
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
-                'mainfont': pdf_config.get('main_font', 'Songti SC'),
-                'mainfontoptions': ['BoldFont=Songti SC Bold'],
+                # 中文正文字体
+                'CJKmainfont': 'Songti SC',
+                'CJKsansfont': 'PingFang SC',
+                'CJKmonofont': 'STFangsong',
+                # 等宽字体（代码）
                 'monofont': pdf_config.get('mono_font', 'SF Mono'),
-                'monofontoptions': ['Scale=0.85'],  # 减小代码字体
+                'monofontoptions': [
+                    'Scale=0.85',
+                    'BoldFont=SF Mono Bold',
+                    'ItalicFont=SF Mono Regular Italic',
+                    'BoldItalicFont=SF Mono Bold Italic'
+                ],
                 'colorlinks': True,
                 'linkcolor': 'blue',
                 'urlcolor': 'blue',
-                # 添加 LaTeX 设置
+                # LaTeX 设置
                 'header-includes': [
                     '\\usepackage{fvextra}',
                     '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
@@ -265,7 +273,20 @@ class RepoPDFConverter:
                     '\\setlength{\\headheight}{15pt}',
                     # 调整代码块设置
                     '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,size=minimal,boxrule=0pt]}{\\end{tcolorbox}}',
-                    '\\usepackage[breakable]{tcolorbox}'
+                    '\\usepackage[breakable]{tcolorbox}',
+                    # 中英文混排优化
+                    '\\usepackage{xeCJK}',
+                    # 设置 CJK 字体
+                    '\\setCJKmainfont[BoldFont={Songti SC Bold},ItalicFont={Songti SC Light}]{Songti SC}',
+                    '\\setCJKsansfont[BoldFont={PingFang SC Semibold},ItalicFont={PingFang SC Light}]{PingFang SC}',
+                    '\\setCJKmonofont{STFangsong}',
+                    # 中文断行设置
+                    '\\XeTeXlinebreaklocale "zh"',
+                    '\\XeTeXlinebreakskip = 0pt plus 1pt',
+                    # 设置标题字体
+                    '\\usepackage{sectsty}',
+                    '\\sectionfont{\\CJKfamily{sf}}',
+                    '\\subsectionfont{\\CJKfamily{sf}}'
                 ]
             }
         }
@@ -319,7 +340,6 @@ class RepoPDFConverter:
                 '--pdf-engine=xelatex',
                 '--wrap=none',
                 '-V', 'geometry:margin=0.5in',
-                '-V', 'CJKmainfont=Songti SC',
                 '-V', 'fontsize=10pt',
                 '--highlight-style=monochrome',
                 '--resource-path=.',
