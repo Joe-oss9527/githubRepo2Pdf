@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+
+# 临时文件
+temp/
+
+# 输出文件
+repo-pdfs/
+
+# IDE
+.vscode/
+.idea/ 
