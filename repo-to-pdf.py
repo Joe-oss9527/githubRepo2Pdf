@@ -15,17 +15,24 @@ import hashlib
 # 设置 Cairo 库路径
 os.environ['DYLD_LIBRARY_PATH'] = '/opt/homebrew/lib:' + os.environ.get('DYLD_LIBRARY_PATH', '')
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 获取主日志记录器
 logger = logging.getLogger(__name__)
+
+# 设置 git 模块的日志级别为 WARNING，抑制调试信息
+logging.getLogger('git').setLevel(logging.WARNING)
+logging.getLogger('git.cmd').setLevel(logging.WARNING)
+logging.getLogger('git.util').setLevel(logging.WARNING)
 
 class GitRepoManager:
     def __init__(self, repo_url: str, branch: str = 'main'):
         self.repo_url = repo_url
         self.branch = branch
         self.repo_dir = None
+        
+        # 设置 Git 环境变量，避免不必要的检查
+        if os.uname().sysname == 'Darwin':  # macOS
+            os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = '/usr/bin/git'
+            os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
         
     def clone_or_pull(self, workspace_dir: Path) -> Path:
         """克隆或更新仓库"""
@@ -684,8 +691,36 @@ def main():
     parser = argparse.ArgumentParser(description='Convert GitHub repository to PDF with syntax highlighting')
     parser.add_argument('-c', '--config', type=Path, required=True,
                       help='Path to configuration YAML file')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                      help='Enable verbose output (DEBUG level)')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                      help='Only show warnings and errors')
     
     args = parser.parse_args()
+    
+    # 配置日志级别
+    if args.quiet:
+        log_level = logging.WARNING
+    elif args.verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+    
+    # 配置日志
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
+    # 设置 git 模块的日志级别
+    git_level = logging.WARNING if not args.verbose else log_level
+    logging.getLogger('git').setLevel(git_level)
+    logging.getLogger('git.cmd').setLevel(git_level)
+    logging.getLogger('git.util').setLevel(git_level)
+    
+    # 设置其他模块的日志级别
+    logging.getLogger('MARKDOWN').setLevel(git_level)
     
     converter = RepoPDFConverter(args.config)
     converter.convert()

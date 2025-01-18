@@ -10,30 +10,31 @@
 - 可配置的文件过滤
 - 自动处理大文件和长行
 - 优雅的代码块展示
+- 智能的日志输出控制
 
 ## 系统要求
 
 - Python 3.6+
 - pandoc
 - XeLaTeX
+- Cairo
+- Inkscape (可选，用于 SVG 转换)
 - 中文字体（默认使用 Songti SC）
 
 ### macOS 安装依赖
 
-```bash
-# 安装 Homebrew（如果未安装）
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+所有依赖会通过 Makefile 自动安装，你只需要确保已安装 Xcode Command Line Tools：
 
-# 安装系统依赖
-brew install pandoc
-brew install --cask mactex
+```bash
+xcode-select --install
 ```
 
 ### Linux (Ubuntu/Debian) 安装依赖
 
 ```bash
 sudo apt-get update
-sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-fonts-extra
+sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-fonts-extra \
+                     python3-venv python3-pip cairo-dev inkscape
 ```
 
 ## 使用方法
@@ -53,22 +54,54 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
    # 其他配置保持默认即可
    ```
 
-3. 运行脚本：
+3. 使用 make 命令：
    ```bash
-   # 基本用法
-   ./run.sh
+   # 显示帮助信息
+   make help
 
-   # 运行完成后清理临时文件
-   ./run.sh --clean
+   # 安装依赖并转换为 PDF（默认命令）
+   make
 
-   # 仅清理临时文件
-   ./run.sh clean
+   # 以调试模式运行（显示详细日志）
+   make debug
+   # 或
+   VERBOSE=1 make
+
+   # 安静模式（只显示警告和错误）
+   QUIET=1 make
+
+   # 只安装依赖
+   make deps
+
+   # 只执行转换
+   make convert
+
+   # 清理临时文件
+   make clean
 
    # 清理所有文件（包括生成的 PDF）
-   ./run.sh clean-all
+   make clean-all
    ```
 
 生成的 PDF 文件将保存在 `repo-pdfs` 目录下。
+
+## 日志级别控制
+
+工具提供了三种日志级别：
+
+1. **正常模式**（默认）
+   - 显示基本的进度信息
+   - 显示重要的状态变更
+   - 显示警告和错误
+
+2. **详细模式**（使用 `make debug` 或 `VERBOSE=1`）
+   - 显示所有调试信息
+   - 显示详细的处理过程
+   - 适合排查问题时使用
+
+3. **安静模式**（使用 `QUIET=1`）
+   - 只显示警告和错误信息
+   - 适合在自动化脚本中使用
 
 ## 配置说明
 
@@ -104,19 +137,23 @@ ignores:
 - 后端：`.py`, `.java`, `.cpp`, `.c`, `.go`, `.rs`, `.rb`, `.php`, `.cs`
 - 配置：`.yaml`, `.yml`, `.toml`, `.xml`, `.env`, `.ini`
 - 其他：`.md`, `.mdx`, `.sh`, `.bash`, `.sql`
+- 图片：`.svg`, `.png`, `.jpg`, `.jpeg`, `.gif`
 
 ## 注意事项
 
 1. 默认跳过大于 1MB 的文件
 2. 自动处理长行和大型代码块
-3. 自动跳过二进制文件和图片
-4. 支持中文文件名和内容
+3. 自动跳过二进制文件
+4. SVG 文件会自动转换为 PNG
+5. 支持中文文件名和内容
+6. 日志输出可通过参数控制详细程度
 
 ## 常见问题
 
 1. **PDF 生成失败**
-   - 检查是否安装了所有依赖
+   - 检查是否安装了所有依赖（运行 `make deps`）
    - 确认中文字体是否可用
+   - 使用 `make debug` 查看详细日志
    - 查看 debug.md 文件了解详情
 
 2. **中文显示异常**
@@ -127,6 +164,11 @@ ignores:
    - 增加被忽略的文件类型
    - 减小文件大小限制
    - 使用更简单的代码高亮主题
+
+4. **SVG 转换失败**
+   - 确保已安装 Cairo 和 Inkscape
+   - 检查 SVG 文件格式是否正确
+   - 使用 `make debug` 查看详细的转换日志
 
 ## License
 
