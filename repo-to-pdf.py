@@ -127,24 +127,23 @@ class RepoPDFConverter:
         return self.temp_dir / "output.md"
 
     def process_markdown(self, content: str) -> str:
-        """处理 Markdown 内容，移除所有图片和 SVG"""
+        """处理 Markdown 内容，确保只保留支持的图片格式"""
         # 先转换为 HTML
         html = self.md.convert(content)
         
         # 使用 BeautifulSoup 处理 HTML
         soup = BeautifulSoup(html, 'html.parser')
         
-        # 移除所有图片
-        for img in soup.find_all('img'):
-            img.decompose()
-            
         # 移除所有 SVG
         for svg in soup.find_all('svg'):
             svg.decompose()
             
-        # 移除所有 figure 标签
-        for figure in soup.find_all('figure'):
-            figure.decompose()
+        # 检查所有图片标签
+        for img in soup.find_all('img'):
+            src = img.get('src', '')
+            # 只保留支持的图片格式
+            if not any(src.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.ico']):
+                img.decompose()
             
         # 获取处理后的 HTML
         cleaned_html = str(soup)
@@ -168,16 +167,26 @@ class RepoPDFConverter:
         if any(ignore in str(rel_path) for ignore in self.config.get('ignores', [])):
             return ""
             
-        # 跳过二进制文件和图片文件
-        binary_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.svgz', '.db', '.sketch'}
-        if ext in binary_extensions:
+        # 创建临时目录下的 images 目录
+        images_dir = self.temp_dir / "images"
+        images_dir.mkdir(exist_ok=True)
+            
+        # 处理图片文件
+        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.ico'}
+        if ext.lower() in image_extensions:
+            try:
+                # 复制图片到临时目录
+                target_path = images_dir / file_path.name
+                shutil.copy2(file_path, target_path)
+            except Exception as e:
+                logger.warning(f"Failed to copy image {file_path}: {e}")
             return ""
             
         try:
             # 获取文件大小（MB）
             file_size = file_path.stat().st_size / (1024 * 1024)
             # 如果文件大于 1MB，跳过
-            if file_size > 1:
+            if file_size > 1 and ext not in image_extensions:
                 logger.debug(f"跳过大文件 ({file_size:.1f}MB): {file_path}")
                 return ""
             
@@ -185,8 +194,25 @@ class RepoPDFConverter:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
             
-            # 如果是 Markdown 文件，使用新的处理方法
+            # 如果是 Markdown 文件，处理图片路径
             if ext == '.md':
+                # 处理图片路径
+                def process_image_path(match):
+                    img_path = match.group(2)
+                    if not img_path.startswith(('http://', 'https://', '/')):
+                        # 相对路径的图片
+                        abs_img_path = (file_path.parent / img_path).resolve()
+                        if abs_img_path.exists() and abs_img_path.suffix.lower() in image_extensions:
+                            # 复制图片到临时目录
+                            target_path = images_dir / abs_img_path.name
+                            shutil.copy2(abs_img_path, target_path)
+                            # 返回更新后的图片引用
+                            return f"![{match.group(1)}](images/{target_path.name})"
+                    return match.group(0)
+                
+                # 处理 Markdown 中的图片引用
+                import re
+                content = re.sub(r'!\[(.*?)\]\((.*?)\)', process_image_path, content)
                 cleaned_content = self.process_markdown(content)
                 return f"\n\n# {rel_path}\n\n{cleaned_content}\n\n"
             
@@ -272,6 +298,14 @@ class RepoPDFConverter:
                     '\\usepackage{fvextra}',
                     '\\usepackage[most]{tcolorbox}',
                     '\\usepackage{listings}',
+                    '\\usepackage{graphicx}',
+                    '\\usepackage{float}',
+                    # 图片设置
+                    '\\DeclareGraphicsExtensions{.png,.jpg,.jpeg,.gif}',
+                    '\\graphicspath{{./images/}}',
+                    # 图片处理设置
+                    '\\usepackage{adjustbox}',
+                    '\\setkeys{Gin}{width=0.8\\linewidth,keepaspectratio}',
                     # 代码块设置
                     '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
                     '\\fvset{breaklines=true, breakanywhere=true}',
@@ -416,10 +450,12 @@ class RepoPDFConverter:
                 '-V', 'geometry:margin=0.5in',
                 '-V', 'fontsize=10pt',
                 '--highlight-style=tango',
-                '--resource-path=.',
+                '--resource-path=' + str(self.temp_dir),  # 修改资源路径设置
                 '--standalone',
                 # LaTeX 设置
                 '-V', 'header-includes=\\usepackage{ragged2e}',
+                '-V', 'header-includes=\\usepackage{graphicx}',  # 添加图片支持
+                '-V', 'header-includes=\\usepackage{float}',     # 添加浮动体支持
                 '-V', 'header-includes=\\AtBeginDocument{\\justifying}',
                 # 优化设置
                 '--pdf-engine-opt=-halt-on-error',
