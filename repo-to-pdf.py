@@ -10,9 +10,13 @@ import git
 from datetime import datetime
 import markdown
 from bs4 import BeautifulSoup
+import hashlib
+
+# 设置 Cairo 库路径
+os.environ['DYLD_LIBRARY_PATH'] = '/opt/homebrew/lib:' + os.environ.get('DYLD_LIBRARY_PATH', '')
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -57,6 +61,9 @@ class RepoPDFConverter:
         # 创建必要的目录
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 支持的图片格式
+        self.image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.svgz'}
         
         # 支持的代码文件扩展名和对应的语言
         self.code_extensions = {
@@ -126,23 +133,192 @@ class RepoPDFConverter:
         logger.info(f"Created temporary directory: {self.temp_dir}")
         return self.temp_dir / "output.md"
 
+    def convert_svg_to_png(self, svg_content: str, output_path: Path) -> bool:
+        """将 SVG 内容转换为 PNG 文件"""
+        try:
+            import cairosvg
+            from xml.etree import ElementTree as ET
+            from io import BytesIO
+            
+            # 移除 XML 声明
+            svg_content = svg_content.replace('<?xml version="1.0" encoding="UTF-8"?>', '')
+            svg_content = svg_content.replace('<?xml version="1.0"?>', '')
+            
+            logger.debug(f"处理 SVG 内容: {svg_content[:200]}...")  # 打印前200个字符用于调试
+            
+            # 检查是否是图标定义文件
+            if '<symbol' in svg_content or '<defs>' in svg_content:
+                logger.debug("跳过图标定义 SVG 文件")
+                return False
+            
+            # 解析 SVG 内容
+            tree = ET.fromstring(svg_content)
+            
+            # 获取或设置 SVG 尺寸
+            width = tree.get('width', '').strip()
+            height = tree.get('height', '').strip()
+            viewBox = tree.get('viewBox', '').strip()
+            
+            logger.debug(f"原始尺寸 - 宽度: {width}, 高度: {height}, viewBox: {viewBox}")
+            
+            # 检查尺寸是否为 0
+            try:
+                if width and float(width.replace('px', '').strip()) == 0:
+                    logger.debug("跳过宽度为 0 的 SVG")
+                    return False
+                if height and float(height.replace('px', '').strip()) == 0:
+                    logger.debug("跳过高度为 0 的 SVG")
+                    return False
+            except ValueError:
+                pass  # 忽略无法转换为数字的值
+            
+            # 如果有 viewBox 但没有宽高，从 viewBox 提取
+            if viewBox and not (width and height):
+                try:
+                    vb_parts = viewBox.split()
+                    if len(vb_parts) == 4:
+                        _, _, vb_width, vb_height = vb_parts
+                        # 检查 viewBox 尺寸是否为 0
+                        if float(vb_width) == 0 or float(vb_height) == 0:
+                            logger.debug("跳过 viewBox 尺寸为 0 的 SVG")
+                            return False
+                        tree.set('width', vb_width + 'px')
+                        tree.set('height', vb_height + 'px')
+                        logger.debug(f"从 viewBox 提取尺寸 - 宽度: {vb_width}px, 高度: {vb_height}px")
+                except Exception as e:
+                    logger.debug(f"从 viewBox 提取尺寸失败: {e}")
+            
+            # 如果仍然没有尺寸信息，添加默认尺寸
+            width = tree.get('width', '').strip()
+            height = tree.get('height', '').strip()
+            if not (width and height):
+                # 设置默认尺寸为 800x600
+                tree.set('width', '800px')
+                tree.set('height', '600px')
+                logger.debug("使用默认尺寸 800x600px")
+            
+            # 确保单位
+            for dim in ['width', 'height']:
+                value = tree.get(dim, '')
+                if value and not any(unit in value.lower() for unit in ['px', 'pt', 'cm', 'mm', 'in']):
+                    tree.set(dim, value + 'px')
+                    logger.debug(f"添加像素单位到 {dim}: {value}px")
+            
+            # 重新生成 SVG 内容
+            svg_content = ET.tostring(tree, encoding='unicode')
+            logger.debug(f"最终 SVG 尺寸 - 宽度: {tree.get('width')}, 高度: {tree.get('height')}")
+            
+            # 转换为 PNG，设置合适的输出尺寸
+            cairosvg.svg2png(
+                bytestring=svg_content.encode('utf-8'),
+                write_to=str(output_path),
+                parent_width=1600,  # 设置父容器宽度
+                parent_height=1200,  # 设置父容器高度
+                scale=2.0  # 设置缩放比例以提高清晰度
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to convert SVG to PNG using cairosvg: {e}")
+            try:
+                # 尝试使用 Inkscape 作为备选方案
+                inkscape_cmd = ['inkscape', 
+                              '--export-type=png',
+                              '--export-filename=' + str(output_path),
+                              '--export-width=1600']
+                
+                # 将 SVG 内容写入临时文件
+                temp_svg = output_path.parent / f"temp_{output_path.stem}.svg"
+                with open(temp_svg, 'w', encoding='utf-8') as f:
+                    f.write(svg_content)
+                
+                # 运行 Inkscape 命令
+                result = subprocess.run([*inkscape_cmd, str(temp_svg)], 
+                                     capture_output=True, 
+                                     text=True)
+                
+                # 删除临时文件
+                temp_svg.unlink()
+                
+                if result.returncode == 0 and output_path.exists():
+                    return True
+                    
+                logger.warning(f"Inkscape conversion failed: {result.stderr}")
+            except Exception as e2:
+                logger.warning(f"Backup SVG conversion also failed: {e2}")
+            return False
+
+    def process_svg_file(self, svg_path: Path, images_dir: Path) -> str:
+        """处理 SVG 文件，转换为 PNG"""
+        try:
+            with open(svg_path, 'r', encoding='utf-8') as f:
+                svg_content = f.read()
+            
+            # 生成唯一的文件名
+            hash_name = hashlib.md5(svg_content.encode()).hexdigest()
+            png_path = images_dir / f"{hash_name}.png"
+            
+            # 如果 PNG 已存在，直接返回路径
+            if png_path.exists():
+                return str(png_path.name)
+            
+            # 转换 SVG 到 PNG
+            if self.convert_svg_to_png(svg_content, png_path):
+                return str(png_path.name)
+        except Exception as e:
+            logger.warning(f"Failed to process SVG file {svg_path}: {e}")
+        return ""
+
     def process_markdown(self, content: str) -> str:
-        """处理 Markdown 内容，确保只保留支持的图片格式"""
+        """处理 Markdown 内容，处理图片和 SVG"""
         # 先转换为 HTML
         html = self.md.convert(content)
         
         # 使用 BeautifulSoup 处理 HTML
         soup = BeautifulSoup(html, 'html.parser')
         
-        # 移除所有 SVG
+        # 处理所有 SVG 标签
         for svg in soup.find_all('svg'):
-            svg.decompose()
+            try:
+                # 创建临时目录下的 images 目录
+                images_dir = self.temp_dir / "images"
+                images_dir.mkdir(exist_ok=True)
+                
+                # 转换 SVG 为 PNG
+                svg_content = str(svg)
+                hash_name = hashlib.md5(svg_content.encode()).hexdigest()
+                png_path = images_dir / f"{hash_name}.png"
+                
+                if self.convert_svg_to_png(svg_content, png_path):
+                    # 创建新的 img 标签替换 svg
+                    img = soup.new_tag('img')
+                    img['src'] = f"images/{png_path.name}"
+                    svg.replace_with(img)
+                else:
+                    svg.decompose()
+            except Exception as e:
+                logger.warning(f"Failed to process inline SVG: {e}")
+                svg.decompose()
             
         # 检查所有图片标签
         for img in soup.find_all('img'):
             src = img.get('src', '')
-            # 只保留支持的图片格式
-            if not any(src.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.ico']):
+            if src.lower().endswith('.svg'):
+                try:
+                    # 处理 SVG 图片引用
+                    if not src.startswith(('http://', 'https://', '/')):
+                        images_dir = self.temp_dir / "images"
+                        images_dir.mkdir(exist_ok=True)
+                        svg_path = Path(src)
+                        if svg_path.exists():
+                            png_name = self.process_svg_file(svg_path, images_dir)
+                            if png_name:
+                                img['src'] = f"images/{png_name}"
+                            else:
+                                img.decompose()
+                except Exception as e:
+                    logger.warning(f"Failed to process SVG image reference: {e}")
+                    img.decompose()
+            elif not any(src.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.ico']):
                 img.decompose()
             
         # 获取处理后的 HTML
@@ -172,21 +348,26 @@ class RepoPDFConverter:
         images_dir.mkdir(exist_ok=True)
             
         # 处理图片文件
-        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.ico'}
-        if ext.lower() in image_extensions:
+        if ext.lower() in self.image_extensions:
             try:
-                # 复制图片到临时目录
-                target_path = images_dir / file_path.name
-                shutil.copy2(file_path, target_path)
+                if ext.lower() in {'.svg', '.svgz'}:
+                    # 处理 SVG 文件
+                    png_name = self.process_svg_file(file_path, images_dir)
+                    if not png_name:
+                        return ""
+                else:
+                    # 处理其他图片文件
+                    target_path = images_dir / file_path.name
+                    shutil.copy2(file_path, target_path)
             except Exception as e:
-                logger.warning(f"Failed to copy image {file_path}: {e}")
+                logger.warning(f"Failed to process image {file_path}: {e}")
             return ""
             
         try:
             # 获取文件大小（MB）
             file_size = file_path.stat().st_size / (1024 * 1024)
             # 如果文件大于 1MB，跳过
-            if file_size > 1 and ext not in image_extensions:
+            if file_size > 1 and ext not in self.image_extensions:
                 logger.debug(f"跳过大文件 ({file_size:.1f}MB): {file_path}")
                 return ""
             
@@ -202,7 +383,7 @@ class RepoPDFConverter:
                     if not img_path.startswith(('http://', 'https://', '/')):
                         # 相对路径的图片
                         abs_img_path = (file_path.parent / img_path).resolve()
-                        if abs_img_path.exists() and abs_img_path.suffix.lower() in image_extensions:
+                        if abs_img_path.exists() and abs_img_path.suffix.lower() in self.image_extensions:
                             # 复制图片到临时目录
                             target_path = images_dir / abs_img_path.name
                             shutil.copy2(abs_img_path, target_path)
