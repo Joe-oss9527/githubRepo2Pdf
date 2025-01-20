@@ -414,7 +414,7 @@ class RepoPDFConverter:
                 
                 # 如果是 MDX 文件，使用 MDX 语法高亮
                 if ext == '.mdx':
-                    return f"\n\n# {rel_path}\n\n```mdx\n{cleaned_content}\n```\n\n"
+                    return f"\n\n# {rel_path}\n\n`````mdx\n{cleaned_content}\n`````\n\n"
                 return f"\n\n# {rel_path}\n\n{cleaned_content}\n\n"
             
             # 如果是支持的代码文件（排除已处理的 MDX）
