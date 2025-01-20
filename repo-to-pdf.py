@@ -363,10 +363,14 @@ class RepoPDFConverter:
 
     def _clean_text(self, text: str) -> str:
         """清理文本内容，只处理特殊字符，保持原始格式"""
-        # 处理 LaTeX 特殊字符
-        text = text.replace('\\', '\\textbackslash{}')
-        text = text.replace('$', '\\$')
-        text = text.replace('%', '\\%')
+        import re
+        
+        # 处理引号内的 \t，将其转义为 LaTeX 可识别的形式
+        def escape_tab_in_quotes(match):
+            content = match.group(1)
+            return '"' + content.replace('\\t', '\\textbackslash{}t') + '"'
+            
+        text = re.sub(r'"([^"]*)"', escape_tab_in_quotes, text)
         
         return text
 
