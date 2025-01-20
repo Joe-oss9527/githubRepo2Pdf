@@ -582,7 +582,14 @@ class RepoPDFConverter:
                     # 标题字体设置
                     '\\usepackage{sectsty}',
                     '\\sectionfont{\\CJKfamily{sf}}',
-                    '\\subsectionfont{\\CJKfamily{sf}}'
+                    '\\subsectionfont{\\CJKfamily{sf}}',
+                    # PDF 元数据设置
+                    '\\hypersetup{',
+                    f'    pdftitle={{{repo_path.name} 代码文档}},',
+                    f'    pdfauthor={{{pdf_config.get("metadata", {}).get("author", "Repo-to-PDF Generator")}}},',
+                    f'    pdfcreator={{{pdf_config.get("metadata", {}).get("creator", "LaTeX")}}},',
+                    f'    pdfproducer={{{pdf_config.get("metadata", {}).get("producer", "XeLaTeX")}}}',
+                    '}'
                 ]
             }
         }

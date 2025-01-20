@@ -13,6 +13,10 @@ pdf_settings:
   main_font: "Songti SC"
   mono_font: "SF Mono"
   highlight_style: "monochrome"
+  metadata:
+    author: "Repo-to-PDF Generator"
+    creator: "LaTeX"
+    producer: "XeLaTeX"
 
 # 忽略的文件或目录
 ignores:
