@@ -169,7 +169,6 @@ class RepoPDFConverter:
             import cairosvg
             from xml.etree import ElementTree as ET
             from io import BytesIO
-            import re
             
             # 移除 XML 声明
             svg_content = svg_content.replace('<?xml version="1.0" encoding="UTF-8"?>', '')
@@ -191,41 +190,17 @@ class RepoPDFConverter:
             viewBox = tree.get('viewBox', '').strip()
             
             logger.debug(f"原始尺寸 - 宽度: {width}, 高度: {height}, viewBox: {viewBox}")
-
-            # 处理相对单位
-            def convert_to_pixels(value, default=None):
-                if not value:
-                    return default
-                # 处理相对单位
-                units = {
-                    'em': 16,     # 1em = 16px
-                    'rem': 16,    # 1rem = 16px
-                    'pt': 1.333,  # 1pt = 1.333px
-                    'pc': 16,     # 1pc = 16px
-                    'mm': 3.779,  # 1mm = 3.779px
-                    'cm': 37.79,  # 1cm = 37.79px
-                    'in': 96,     # 1in = 96px
-                    '%': 1        # 百分比保持不变
-                }
-                
-                # 匹配数字和单位
-                match = re.match(r'^([\d.]+)([a-z%]*)$', value.lower())
-                if match:
-                    num, unit = match.groups()
-                    num = float(num)
-                    if unit in units:
-                        return str(round(num * units[unit])) + 'px'
-                    elif unit == 'px' or not unit:
-                        return str(round(num)) + 'px'
-                return default
-
-            # 转换宽度和高度
-            width = convert_to_pixels(width, '800px')
-            height = convert_to_pixels(height, '600px')
             
-            # 设置转换后的尺寸
-            tree.set('width', width)
-            tree.set('height', height)
+            # 检查尺寸是否为 0
+            try:
+                if width and float(width.replace('px', '').strip()) == 0:
+                    logger.debug("跳过宽度为 0 的 SVG")
+                    return False
+                if height and float(height.replace('px', '').strip()) == 0:
+                    logger.debug("跳过高度为 0 的 SVG")
+                    return False
+            except ValueError:
+                pass  # 忽略无法转换为数字的值
             
             # 如果有 viewBox 但没有宽高，从 viewBox 提取
             if viewBox and not (width and height):
@@ -243,12 +218,21 @@ class RepoPDFConverter:
                 except Exception as e:
                     logger.debug(f"从 viewBox 提取尺寸失败: {e}")
             
-            # 处理内部元素的相对单位
-            for elem in tree.iter():
-                for attr in ['width', 'height', 'x', 'y', 'dx', 'dy', 'font-size']:
-                    value = elem.get(attr)
-                    if value:
-                        elem.set(attr, convert_to_pixels(value, value))
+            # 如果仍然没有尺寸信息，添加默认尺寸
+            width = tree.get('width', '').strip()
+            height = tree.get('height', '').strip()
+            if not (width and height):
+                # 设置默认尺寸为 800x600
+                tree.set('width', '800px')
+                tree.set('height', '600px')
+                logger.debug("使用默认尺寸 800x600px")
+            
+            # 确保单位
+            for dim in ['width', 'height']:
+                value = tree.get(dim, '')
+                if value and not any(unit in value.lower() for unit in ['px', 'pt', 'cm', 'mm', 'in']):
+                    tree.set(dim, value + 'px')
+                    logger.debug(f"添加像素单位到 {dim}: {value}px")
             
             # 重新生成 SVG 内容
             svg_content = ET.tostring(tree, encoding='unicode')
@@ -435,79 +419,18 @@ class RepoPDFConverter:
                 def process_image_path(match):
                     img_path = match.group(2)
                     if not img_path.startswith(('http://', 'https://', '/')):
-                        try:
-                            # 处理 ./ 和 ../ 的情况
-                            img_path = img_path.lstrip('./')
-                            if img_path.startswith('../'):
-                                # 处理 ../ 的情况，从当前文件所在目录开始解析
-                                current_dir = file_path.parent
-                                while img_path.startswith('../'):
-                                    img_path = img_path[3:]
-                                    current_dir = current_dir.parent
-                                img_path = current_dir / img_path
-                            else:
-                                # 相对于当前文件的路径
-                                img_path = file_path.parent / img_path
-
-                            # 尝试在仓库中定位图片
-                            abs_img_path = repo_root / img_path
-                            if not abs_img_path.exists():
-                                # 尝试作为相对于文件的路径
-                                abs_img_path = file_path.parent / img_path
-                            if not abs_img_path.exists():
-                                # 尝试作为相对于仓库根目录的路径
-                                abs_img_path = repo_root / img_path.name
-
-                            if abs_img_path.exists() and abs_img_path.suffix.lower() in self.image_extensions:
-                                # 复制图片到临时目录，使用唯一的名称避免冲突
-                                unique_name = f"{abs_img_path.stem}_{abs_img_path.parent.name}{abs_img_path.suffix}"
-                                target_path = images_dir / unique_name
-                                shutil.copy2(abs_img_path, target_path)
-                                # 返回更新后的图片引用
-                                return f"![{match.group(1)}](images/{target_path.name})"
-                            else:
-                                logger.warning(f"Image not found or not supported: {abs_img_path}")
-                        except Exception as e:
-                            logger.warning(f"Error processing image path {img_path}: {e}")
+                        # 相对路径的图片
+                        abs_img_path = (file_path.parent / img_path).resolve()
+                        if abs_img_path.exists() and abs_img_path.suffix.lower() in self.image_extensions:
+                            # 复制图片到临时目录
+                            target_path = images_dir / abs_img_path.name
+                            shutil.copy2(abs_img_path, target_path)
+                            # 返回更新后的图片引用
+                            return f"![{match.group(1)}](images/{target_path.name})"
                     return match.group(0)
                 
                 # 处理 Markdown 中的图片引用
                 content = re.sub(r'!\[(.*?)\]\((.*?)\)', process_image_path, content)
-                # 处理 HTML 格式的图片标签
-                def process_html_img(match):
-                    img_path = match.group(1)
-                    if not img_path.startswith(('http://', 'https://', '/')):
-                        try:
-                            # 使用与上面相同的逻辑处理路径
-                            img_path = img_path.lstrip('./')
-                            if img_path.startswith('../'):
-                                current_dir = file_path.parent
-                                while img_path.startswith('../'):
-                                    img_path = img_path[3:]
-                                    current_dir = current_dir.parent
-                                img_path = current_dir / img_path
-                            else:
-                                img_path = file_path.parent / img_path
-
-                            abs_img_path = repo_root / img_path
-                            if not abs_img_path.exists():
-                                abs_img_path = file_path.parent / img_path
-                            if not abs_img_path.exists():
-                                abs_img_path = repo_root / img_path.name
-
-                            if abs_img_path.exists() and abs_img_path.suffix.lower() in self.image_extensions:
-                                unique_name = f"{abs_img_path.stem}_{abs_img_path.parent.name}{abs_img_path.suffix}"
-                                target_path = images_dir / unique_name
-                                shutil.copy2(abs_img_path, target_path)
-                                return f'<img src="images/{target_path.name}"'
-                            else:
-                                logger.warning(f"Image not found or not supported: {abs_img_path}")
-                        except Exception as e:
-                            logger.warning(f"Error processing HTML image path {img_path}: {e}")
-                    return match.group(0)
-
-                content = re.sub(r'<img\s+src=["\']([^"\']+)["\']', process_html_img, content)
-                
                 cleaned_content = self.process_markdown(content)
                 
                 # 如果是 MDX 文件，使用 MDX 语法高亮
@@ -536,22 +459,34 @@ class RepoPDFConverter:
             logger.debug(f"跳过二进制文件: {file_path}")
             return ""
             
-    def _process_long_lines(self, content: str, max_length: int = 80) -> str:
+    def _process_long_lines(self, content: str, max_length: int = 100) -> str:
         """处理长行，将它们分割成多行"""
         lines = []
         for line in content.splitlines():
-            # 如果行长度超过限制
             if len(line) > max_length:
-                # 保持缩进
-                indent = ' ' * (len(line) - len(line.lstrip()))
-                # 处理行内容
-                content = line.lstrip()
-                # 每 max_length 个字符添加换行和缩进
-                parts = [content[i:i+max_length] for i in range(0, len(content), max_length)]
-                # 重新组合行，保持缩进
-                line = f'\n{indent}'.join(parts)
+                # 对于包含长字符串的行进行特殊处理
+                if '"' in line or "'" in line:
+                    line = self._break_long_strings(line)
             lines.append(line)
         return '\n'.join(lines)
+        
+    def _break_long_strings(self, line: str) -> str:
+        """处理包含长字符串的行"""
+        import re
+        # 查找长字符串（包括包名和版本号）
+        pattern = r'["\']([^"\']{100,})["\']'
+        
+        def replacer(match):
+            # 将长字符串每隔 80 个字符添加换行和适当的缩进
+            s = match.group(1)
+            indent = ' ' * (len(line) - len(line.lstrip()))
+            parts = [s[i:i+80] for i in range(0, len(s), 80)]
+            if len(parts) > 1:
+                quote = match.group(0)[0]  # 获取原始引号
+                return f'{quote}\\\n{indent}'.join(parts) + quote
+            return match.group(0)
+            
+        return re.sub(pattern, replacer, line)
 
     def create_language_definitions(self) -> list:
         """创建所有支持的语言定义"""
@@ -720,34 +655,6 @@ class RepoPDFConverter:
                     '\\usepackage{ragged2e}',  # 段落对齐支持
                     # 段落对齐设置
                     '\\AtBeginDocument{\\justifying}',
-                    # 代码块设置
-                    '\\fvset{breaklines=true,breakanywhere=true,commandchars=\\\\\\{\\}}',
-                    '\\RecustomVerbatimEnvironment{Highlighting}{Verbatim}{',
-                    '    breaklines=true,',
-                    '    breakanywhere=true,',
-                    '    commandchars=\\\\\\{\\},',
-                    '    codes={\\catcode`\\$=3\\catcode`\\^=7},',
-                    '    fontsize=\\small,',
-                    '    baselinestretch=1,',
-                    '    breakafter=\\{,\\},;,=,|,<,>,\\,,',
-                    '    breakautoindent=false,',
-                    '    samepage=false',
-                    '}',
-                    # 代码框设置
-                    '\\renewenvironment{Shaded}{',
-                    '    \\begin{tcolorbox}[',
-                    '        breakable,',
-                    '        boxrule=0pt,',
-                    '        frame hidden,',
-                    '        sharp corners,',
-                    '        enhanced,',
-                    '        interior style={opacity=0},',
-                    '        before skip=\\baselineskip,',
-                    '        after skip=\\baselineskip',
-                    '    ]',
-                    '}{',
-                    '    \\end{tcolorbox}',
-                    '}',
                     # PDF 元数据设置
                     '\\hypersetup{',
                     f'    pdftitle={{{repo_name} 代码文档}},',
@@ -775,6 +682,11 @@ class RepoPDFConverter:
                     # 图片处理设置
                     '\\usepackage{adjustbox}',
                     '\\setkeys{Gin}{width=0.8\\linewidth,keepaspectratio}',
+                    # 代码块设置
+                    '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
+                    '\\fvset{breaklines=true, breakanywhere=true}',
+                    # 代码框设置
+                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
                     # 设置 listings 包的全局选项
                     '\\lstset{%',
                     '  basicstyle=\\ttfamily\\small,',
@@ -784,8 +696,7 @@ class RepoPDFConverter:
                     '  stringstyle=\\color{red!70!black},',
                     '  numberstyle=\\tiny\\color{gray},',
                     '  breaklines=true,',
-                    '  breakatwhitespace=false,',
-                    '  breakindent=0pt,',
+                    '  breakatwhitespace=true,',
                     '  keepspaces=true,',
                     '  showspaces=false,',
                     '  showstringspaces=false,',
