@@ -11,6 +11,7 @@ from datetime import datetime
 import markdown
 from bs4 import BeautifulSoup
 import hashlib
+from html2text import HTML2Text
 
 # 设置 Cairo 库路径
 os.environ['DYLD_LIBRARY_PATH'] = '/opt/homebrew/lib:' + os.environ.get('DYLD_LIBRARY_PATH', '')
@@ -111,12 +112,7 @@ class RepoPDFConverter:
             '.toml': 'toml',
             '.xml': 'xml',
             '.md': 'markdown',
-            '.mdx': 'mdx',
-            
-            # 其他
-            '.dockerfile': 'dockerfile',
-            '.env': 'dotenv',
-            '.ini': 'ini'
+            '.mdx': 'mdx'  # 添加 MDX 支持
         }
         
         # 初始化 Markdown 转换器
@@ -332,7 +328,6 @@ class RepoPDFConverter:
         cleaned_html = str(soup)
         
         # 将 HTML 转回 Markdown
-        from html2text import HTML2Text
         h2t = HTML2Text()
         h2t.body_width = 0  # 不限制行宽
         cleaned_markdown = h2t.handle(cleaned_html)
@@ -382,8 +377,8 @@ class RepoPDFConverter:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
             
-            # 如果是 Markdown 文件，处理图片路径
-            if ext == '.md':
+            # 如果是 Markdown 或 MDX 文件，处理图片路径
+            if ext in {'.md', '.mdx'}:
                 # 处理图片路径
                 def process_image_path(match):
                     img_path = match.group(2)
@@ -399,13 +394,16 @@ class RepoPDFConverter:
                     return match.group(0)
                 
                 # 处理 Markdown 中的图片引用
-                import re
                 content = re.sub(r'!\[(.*?)\]\((.*?)\)', process_image_path, content)
                 cleaned_content = self.process_markdown(content)
+                
+                # 如果是 MDX 文件，使用 MDX 语法高亮
+                if ext == '.mdx':
+                    return f"\n\n# {rel_path}\n\n```mdx\n{cleaned_content}\n```\n\n"
                 return f"\n\n# {rel_path}\n\n{cleaned_content}\n\n"
             
-            # 如果是支持的代码文件，转换为代码块
-            if ext in self.code_extensions:
+            # 如果是支持的代码文件（排除已处理的 MDX）
+            if ext in self.code_extensions and ext != '.mdx':
                 # 跳过包含 SVG 的文件
                 if '<svg' in content:
                     return ""
@@ -570,6 +568,22 @@ class RepoPDFConverter:
                     '  morestring=[b]",',
                     '  morestring=[b]\',',
                     '}',
+                    # 添加 MDX 语言定义
+                    '\\lstdefinelanguage{mdx}{',
+                    '  basicstyle=\\ttfamily,',
+                    '  keywords={import,export,default,function,return,props,const,let,var,if,else,switch,case,break,continue,for,while,do,try,catch,finally,throw,class,extends,new,delete,typeof,instanceof,void,this,super,with,yield,async,await,static,get,set,of,from,as},',
+                    '  keywordstyle=\\color{blue},',
+                    '  sensitive=true,',
+                    '  comment=[l]{//},',
+                    '  morecomment=[s]{/*}{*/},',
+                    '  commentstyle=\\color{darkgreen},',
+                    '  stringstyle=\\color{red},',
+                    '  morestring=[b]",',
+                    '  morestring=[b]\',',
+                    '  alsoletter={<>,/},',  # 让 JSX 标签被识别为单个token
+                    '  morekeywords=[2]{<,</,/>,>},', # JSX 标签作为第二组关键字
+                    '  keywordstyle=[2]\\color{purple},',
+                    '}',
                     # 标题和段落设置
                     '\\setlength{\\headheight}{15pt}',
                     # 中文字体设置
@@ -635,7 +649,7 @@ class RepoPDFConverter:
             # 调用 pandoc 进行转换，添加更多选项
             cmd = [
                 'pandoc',
-                '-f', 'markdown',
+                '-f', 'markdown',  # 从 Markdown 输入
                 '-t', 'pdf',
                 '--defaults', str(yaml_path),
                 '--toc',
