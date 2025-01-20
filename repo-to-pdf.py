@@ -115,6 +115,33 @@ class RepoPDFConverter:
             '.mdx': 'mdx'  # 添加 MDX 支持
         }
         
+        # 语言缩进配置（基于各语言的最佳实践）
+        self.language_indents = {
+            'python': 4,      # PEP 8
+            'go': 8,         # Go 标准
+            'javascript': 2,  # JavaScript 常用
+            'typescript': 2,  # TypeScript 常用
+            'java': 4,       # Java 常用
+            'c': 4,          # C 常用
+            'cpp': 4,        # C++ 常用
+            'rust': 4,       # Rust 常用
+            'ruby': 2,       # Ruby 常用
+            'php': 4,        # PSR-2
+            'html': 2,       # HTML 常用
+            'css': 2,        # CSS 常用
+            'yaml': 2,       # YAML 常用
+            'markdown': 4,   # Markdown 常用
+            'bash': 2,       # Shell 常用
+            'sql': 2,        # SQL 常用
+            'csharp': 4,     # C# 常用
+            'vue': 2,        # Vue 常用
+            'svelte': 2,     # Svelte 常用
+            'graphql': 2,    # GraphQL 常用
+            'toml': 2,       # TOML 常用
+            'xml': 2,        # XML 常用
+            'mdx': 2,        # MDX 常用
+        }
+        
         # 初始化 Markdown 转换器
         self.md = markdown.Markdown(extensions=['fenced_code', 'tables'])
         
@@ -351,17 +378,11 @@ class RepoPDFConverter:
         return cleaned_markdown
 
     def _clean_text(self, text: str) -> str:
-        """清理文本内容，处理不可见字符和特殊字符"""
-        # 移除不可见字符，但保留换行
-        text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r')
-        
-        # 处理制表符
-        text = text.replace('\t', '    ')  # 将制表符替换为4个空格
-        
-        # 只处理 LaTeX 中最基本的特殊字符
-        text = text.replace('\\', '\\textbackslash{}')  # 处理 \ 符号
-        text = text.replace('$', '\\$')  # 处理 $ 符号
-        text = text.replace('%', '\\%')  # 处理 % 符号
+        """清理文本内容，只处理特殊字符，保持原始格式"""
+        # 处理 LaTeX 特殊字符
+        text = text.replace('\\', '\\textbackslash{}')
+        text = text.replace('$', '\\$')
+        text = text.replace('%', '\\%')
         
         return text
 
@@ -515,38 +536,152 @@ class RepoPDFConverter:
             logger.debug(f"跳过二进制文件: {file_path}")
             return ""
             
-    def _process_long_lines(self, content: str, max_length: int = 100) -> str:
+    def _process_long_lines(self, content: str, max_length: int = 80) -> str:
         """处理长行，将它们分割成多行"""
         lines = []
         for line in content.splitlines():
+            # 如果行长度超过限制
             if len(line) > max_length:
-                # 对于包含长字符串的行进行特殊处理
-                if '"' in line or "'" in line:
-                    line = self._break_long_strings(line)
+                # 保持缩进
+                indent = ' ' * (len(line) - len(line.lstrip()))
+                # 处理行内容
+                content = line.lstrip()
+                # 每 max_length 个字符添加换行和缩进
+                parts = [content[i:i+max_length] for i in range(0, len(content), max_length)]
+                # 重新组合行，保持缩进
+                line = f'\n{indent}'.join(parts)
             lines.append(line)
         return '\n'.join(lines)
+
+    def create_language_definitions(self) -> list:
+        """创建所有支持的语言定义"""
+        definitions = []
         
-    def _break_long_strings(self, line: str) -> str:
-        """处理包含长字符串的行"""
-        import re
-        # 查找长字符串（包括包名和版本号）
-        pattern = r'["\']([^"\']{100,})["\']'
+        # TypeScript 定义
+        definitions.extend([
+            '\\lstdefinelanguage{typescript}[]{javascript}{%',
+            '  morekeywords={interface,type,implements,namespace,declare,abstract,',
+            '                as,is,keyof,in,extends,readonly,instanceof,unique,',
+            '                infer,await,async,module,namespace,declare,export,import},',
+            f'  tabsize={self.language_indents["typescript"]},',
+            '}',
+        ])
         
-        def replacer(match):
-            # 将长字符串每隔 80 个字符添加换行和适当的缩进
-            s = match.group(1)
-            indent = ' ' * (len(line) - len(line.lstrip()))
-            parts = [s[i:i+80] for i in range(0, len(s), 80)]
-            if len(parts) > 1:
-                quote = match.group(0)[0]  # 获取原始引号
-                return f'{quote}\\\n{indent}'.join(parts) + quote
-            return match.group(0)
-            
-        return re.sub(pattern, replacer, line)
+        # Go 语言定义
+        definitions.extend([
+            '\\lstdefinelanguage{go}{',
+            '  morekeywords={package,import,func,return,var,const,type,struct,interface,',
+            '                if,else,for,range,break,continue,switch,case,default,',
+            '                go,chan,select,defer,fallthrough,goto,map,make,new},',
+            '  sensitive=true,',
+            '  morecomment=[l]{//},',
+            '  morecomment=[s]{/*}{*/},',
+            '  morestring=[b]",',
+            '  morestring=[b]`,',
+            '  morestring=[b]\',',
+            '  keywordstyle=\\color{blue},',
+            '  commentstyle=\\color{darkgreen},',
+            '  stringstyle=\\color{red},',
+            '  basicstyle=\\ttfamily\\small\\keepspaces,',
+            f'  tabsize={self.language_indents["go"]},',
+            '}',
+        ])
+        
+        # Python 定义
+        definitions.extend([
+            '\\lstdefinelanguage{python}{',
+            '  morekeywords={def,class,from,import,return,yield,raise,try,except,finally,',
+            '                if,elif,else,for,while,break,continue,pass,assert,with,as,',
+            '                lambda,global,nonlocal,True,False,None,and,or,not,is,in},',
+            '  sensitive=true,',
+            '  morecomment=[l]\\#,',
+            '  morestring=[b]",',
+            '  morestring=[b]\',',
+            '  morestring=[s]{"""}{"""},',
+            '  morestring=[s]{\'\'\'}{\'\'\'}, ',
+            '  keywordstyle=\\color{blue},',
+            '  commentstyle=\\color{darkgreen},',
+            '  stringstyle=\\color{red},',
+            '  basicstyle=\\ttfamily\\small\\keepspaces,',
+            f'  tabsize={self.language_indents["python"]},',
+            '}',
+        ])
+        
+        # JavaScript 定义
+        definitions.extend([
+            '\\lstdefinelanguage{javascript}{',
+            '  morekeywords={const,let,var,function,class,extends,implements,import,export,',
+            '                return,if,else,for,while,do,switch,case,break,continue,try,',
+            '                catch,finally,throw,async,await,new,this,super,static},',
+            '  sensitive=true,',
+            '  morecomment=[l]{//},',
+            '  morecomment=[s]{/*}{*/},',
+            '  morestring=[b]",',
+            '  morestring=[b]\',',
+            '  morestring=[b]`,',
+            '  keywordstyle=\\color{blue},',
+            '  commentstyle=\\color{darkgreen},',
+            '  stringstyle=\\color{red},',
+            '  basicstyle=\\ttfamily\\small\\keepspaces,',
+            f'  tabsize={self.language_indents["javascript"]},',
+            '}',
+        ])
+        
+        # Vue 定义
+        definitions.extend([
+            '\\lstdefinelanguage{vue}{',
+            '  basicstyle=\\ttfamily,',
+            '  keywords={template,script,style,export,default,props,data,methods,computed,watch,',
+            '            components,mounted,created,updated,destroyed,beforeCreate,beforeMount,',
+            '            beforeUpdate,beforeDestroy},',
+            '  keywordstyle=\\color{blue},',
+            '  sensitive=true,',
+            '  comment=[l]{//},',
+            '  morecomment=[s]{/*}{*/},',
+            '  commentstyle=\\color{darkgreen},',
+            '  stringstyle=\\color{red},',
+            '  morestring=[b]",',
+            '  morestring=[b]\',',
+            f'  tabsize={self.language_indents["vue"]},',
+            '}',
+        ])
+        
+        # MDX 定义
+        definitions.extend([
+            '\\lstdefinelanguage{mdx}{',
+            '  basicstyle=\\ttfamily,',
+            '  keywords={import,export,default,function,return,props,const,let,var,if,else,',
+            '            switch,case,break,continue,for,while,do,try,catch,finally,throw,',
+            '            class,extends,new,delete,typeof,instanceof,void,this,super,with,',
+            '            yield,async,await,static,get,set,of,from,as},',
+            '  keywordstyle=\\color{blue},',
+            '  sensitive=true,',
+            '  comment=[l]{//},',
+            '  morecomment=[s]{/*}{*/},',
+            '  commentstyle=\\color{darkgreen},',
+            '  stringstyle=\\color{red},',
+            '  morestring=[b]",',
+            '  morestring=[b]\',',
+            '  alsoletter={<>,/},',  # 让 JSX 标签被识别为单个token
+            '  morekeywords=[2]{<,</,/>,>},', # JSX 标签作为第二组关键字
+            '  keywordstyle=[2]\\color{purple},',
+            f'  tabsize={self.language_indents["mdx"]},',
+            '}',
+        ])
+        
+        # 添加标题和段落设置
+        definitions.extend([
+            '\\setlength{\\headheight}{15pt}',
+        ])
+        
+        return definitions
 
     def create_pandoc_yaml(self, repo_name: str) -> Path:
         """创建 Pandoc 的 YAML 配置文件"""
         pdf_config = self.config.get('pdf_settings', {})
+        
+        # 获取所有语言定义
+        language_definitions = self.create_language_definitions()
         
         yaml_config = {
             'pdf-engine': 'xelatex',
@@ -655,73 +790,16 @@ class RepoPDFConverter:
                     '  showspaces=false,',
                     '  showstringspaces=false,',
                     '  showtabs=false,',
-                    '  tabsize=2,',
                     '  frame=none,',
                     '  xleftmargin=0pt,',
                     '  numbers=none,',
                     '  inputencoding=utf8,',
                     '  extendedchars=true,',
+                    '  columns=flexible,',
+                    '  basewidth={0.5em,0.45em},',
+                    '  keepspaces=true,',
                     '}',
-                    # 定义新的语言
-                    '\\lstdefinelanguage{typescript}[]{javascript}{%',
-                    '  morekeywords={interface,type,implements,namespace,declare,abstract,',
-                    '                as,is,keyof,in,extends,readonly,instanceof,unique,',
-                    '                infer,await,async,module,namespace,declare,export,import},',
-                    '}',
-                    '\\lstdefinelanguage{tsx}{',
-                    '  basicstyle=\\ttfamily,',
-                    '  keywords={const,let,var,function,class,extends,implements,import,export,return,if,else,for,while,do,switch,case,break,continue,try,catch,finally,throw,async,await,static,public,private,protected,get,set,new,this,super,interface,type,namespace,JSX},',
-                    '  keywordstyle=\\color{blue},',
-                    '  sensitive=true,',
-                    '  comment=[l]{//},',
-                    '  morecomment=[s]{/*}{*/},',
-                    '  commentstyle=\\color{darkgreen},',
-                    '  stringstyle=\\color{red},',
-                    '  morestring=[b]",',
-                    '  morestring=[b]\',',
-                    '}',
-                    '\\lstdefinelanguage{vue}{',
-                    '  basicstyle=\\ttfamily,',
-                    '  keywords={template,script,style,export,default,props,data,methods,computed,watch,components,mounted,created,updated,destroyed,beforeCreate,beforeMount,beforeUpdate,beforeDestroy},',
-                    '  keywordstyle=\\color{blue},',
-                    '  sensitive=true,',
-                    '  comment=[l]{//},',
-                    '  morecomment=[s]{/*}{*/},',
-                    '  commentstyle=\\color{darkgreen},',
-                    '  stringstyle=\\color{red},',
-                    '  morestring=[b]",',
-                    '  morestring=[b]\',',
-                    '}',
-                    '\\lstdefinelanguage{svelte}{',
-                    '  basicstyle=\\ttfamily,',
-                    '  keywords={script,style,export,let,const,if,else,each,await,then,catch,as,import,from},',
-                    '  keywordstyle=\\color{blue},',
-                    '  sensitive=true,',
-                    '  comment=[l]{//},',
-                    '  morecomment=[s]{/*}{*/},',
-                    '  commentstyle=\\color{darkgreen},',
-                    '  stringstyle=\\color{red},',
-                    '  morestring=[b]",',
-                    '  morestring=[b]\',',
-                    '}',
-                    # 添加 MDX 语言定义
-                    '\\lstdefinelanguage{mdx}{',
-                    '  basicstyle=\\ttfamily,',
-                    '  keywords={import,export,default,function,return,props,const,let,var,if,else,switch,case,break,continue,for,while,do,try,catch,finally,throw,class,extends,new,delete,typeof,instanceof,void,this,super,with,yield,async,await,static,get,set,of,from,as},',
-                    '  keywordstyle=\\color{blue},',
-                    '  sensitive=true,',
-                    '  comment=[l]{//},',
-                    '  morecomment=[s]{/*}{*/},',
-                    '  commentstyle=\\color{darkgreen},',
-                    '  stringstyle=\\color{red},',
-                    '  morestring=[b]",',
-                    '  morestring=[b]\',',
-                    '  alsoletter={<>,/},',  # 让 JSX 标签被识别为单个token
-                    '  morekeywords=[2]{<,</,/>,>},', # JSX 标签作为第二组关键字
-                    '  keywordstyle=[2]\\color{purple},',
-                    '}',
-                    # 标题和段落设置
-                    '\\setlength{\\headheight}{15pt}',
+                    *language_definitions,  # 添加所有语言定义
                 ]
             }
         }
