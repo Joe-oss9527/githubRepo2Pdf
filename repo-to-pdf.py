@@ -666,7 +666,7 @@ class RepoPDFConverter:
             # 调用 pandoc 进行转换，添加更多选项
             cmd = [
                 'pandoc',
-                '-f', 'markdown+pipe_tables+grid_tables',  # 基本表格支持
+                '-f', 'markdown+pipe_tables+grid_tables+table_captions+yaml_metadata_block+smart+fenced_code_blocks+fenced_code_attributes+backtick_code_blocks+inline_code_attributes+line_blocks+fancy_lists+definition_lists+example_lists+task_lists+citations+footnotes+smart+superscript+subscript+raw_html+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash+raw_tex+implicit_figures+link_attributes+bracketed_spans+native_divs+native_spans+raw_attribute+header_attributes+auto_identifiers+pandoc_title_block+mmd_title_block+autolink_bare_uris+emoji+hard_line_breaks+escaped_line_breaks+blank_before_blockquote+blank_before_header+space_in_atx_header+strikeout+east_asian_line_breaks',  # 添加所有有用的扩展特性
                 '--pdf-engine=xelatex',
                 '--wrap=none',
                 '--toc',
