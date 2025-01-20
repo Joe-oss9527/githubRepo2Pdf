@@ -335,17 +335,11 @@ class RepoPDFConverter:
         return cleaned_markdown
 
     def _clean_text(self, text: str) -> str:
-        """清理文本内容，处理不可见字符和特殊字符"""
-        # 移除不可见字符，但保留换行
-        text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r')
-        
-        # 处理制表符
-        text = text.replace('\t', '    ')  # 将制表符替换为4个空格
-        
-        # 只处理 LaTeX 中最基本的特殊字符
-        text = text.replace('\\', '\\textbackslash{}')  # 处理 \ 符号
-        text = text.replace('$', '\\$')  # 处理 $ 符号
-        text = text.replace('%', '\\%')  # 处理 % 符号
+        """清理文本内容，只处理特殊字符，保持原始格式"""
+        # 处理 LaTeX 特殊字符
+        text = text.replace('\\', '\\textbackslash{}')
+        text = text.replace('$', '\\$')
+        text = text.replace('%', '\\%')
         
         return text
 
@@ -554,18 +548,37 @@ class RepoPDFConverter:
                     '  showspaces=false,',
                     '  showstringspaces=false,',
                     '  showtabs=false,',
-                    '  tabsize=2,',
+                    '  tabsize=4,',
                     '  frame=none,',
                     '  xleftmargin=0pt,',
                     '  numbers=none,',
                     '  inputencoding=utf8,',
                     '  extendedchars=true,',
+                    '  columns=flexible,',
+                    '  basewidth={0.5em,0.45em},',
+                    '  keepspaces=true,',
                     '}',
                     # 定义新的语言
                     '\\lstdefinelanguage{typescript}[]{javascript}{%',
                     '  morekeywords={interface,type,implements,namespace,declare,abstract,',
                     '                as,is,keyof,in,extends,readonly,instanceof,unique,',
                     '                infer,await,async,module,namespace,declare,export,import},',
+                    '}',
+                    # Go 语言定义
+                    '\\lstdefinelanguage{go}{',
+                    '  morekeywords={package,import,func,return,var,const,type,struct,interface,',
+                    '                if,else,for,range,break,continue,switch,case,default,',
+                    '                go,chan,select,defer,fallthrough,goto,map,make,new},',
+                    '  sensitive=true,',
+                    '  morecomment=[l]{//},',
+                    '  morecomment=[s]{/*}{*/},',
+                    '  morestring=[b]",',
+                    '  morestring=[b]`,',
+                    '  morestring=[b]\',',
+                    '  keywordstyle=\\color{blue},',
+                    '  commentstyle=\\color{darkgreen},',
+                    '  stringstyle=\\color{red},',
+                    '  basicstyle=\\ttfamily\\small\\keepspaces,',
                     '}',
                     '\\lstdefinelanguage{tsx}{',
                     '  basicstyle=\\ttfamily,',
