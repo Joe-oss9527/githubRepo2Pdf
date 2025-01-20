@@ -459,34 +459,22 @@ class RepoPDFConverter:
             logger.debug(f"跳过二进制文件: {file_path}")
             return ""
             
-    def _process_long_lines(self, content: str, max_length: int = 100) -> str:
+    def _process_long_lines(self, content: str, max_length: int = 80) -> str:
         """处理长行，将它们分割成多行"""
         lines = []
         for line in content.splitlines():
+            # 如果行长度超过限制
             if len(line) > max_length:
-                # 对于包含长字符串的行进行特殊处理
-                if '"' in line or "'" in line:
-                    line = self._break_long_strings(line)
+                # 保持缩进
+                indent = ' ' * (len(line) - len(line.lstrip()))
+                # 处理行内容
+                content = line.lstrip()
+                # 每 max_length 个字符添加换行和缩进
+                parts = [content[i:i+max_length] for i in range(0, len(content), max_length)]
+                # 重新组合行，保持缩进
+                line = f'\n{indent}'.join(parts)
             lines.append(line)
         return '\n'.join(lines)
-        
-    def _break_long_strings(self, line: str) -> str:
-        """处理包含长字符串的行"""
-        import re
-        # 查找长字符串（包括包名和版本号）
-        pattern = r'["\']([^"\']{100,})["\']'
-        
-        def replacer(match):
-            # 将长字符串每隔 80 个字符添加换行和适当的缩进
-            s = match.group(1)
-            indent = ' ' * (len(line) - len(line.lstrip()))
-            parts = [s[i:i+80] for i in range(0, len(s), 80)]
-            if len(parts) > 1:
-                quote = match.group(0)[0]  # 获取原始引号
-                return f'{quote}\\\n{indent}'.join(parts) + quote
-            return match.group(0)
-            
-        return re.sub(pattern, replacer, line)
 
     def create_language_definitions(self) -> list:
         """创建所有支持的语言定义"""
