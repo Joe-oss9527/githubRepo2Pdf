@@ -27,7 +27,7 @@ PDF_DIR := repo-pdfs
 REQUIREMENTS := requirements.txt
 
 # 检查必要的命令
-REQUIRED_CMDS := python3 git
+REQUIRED_CMDS := python3 git xelatex pandoc
 
 # 运行参数
 VERBOSE ?= 0
@@ -52,13 +52,14 @@ debug: all
 
 # 检查必要的命令是否存在
 check-reqs:
+	@echo "$(BLUE)==> 检查必要的命令...$(NC)"
 	@for cmd in $(REQUIRED_CMDS); do \
 		if ! command -v $$cmd >/dev/null 2>&1; then \
-			echo "$(RED)错误: 找不到命令 '$$cmd'$(NC)"; \
-			echo "$(YELLOW)请先安装必要的依赖$(NC)"; \
+			echo "$(RED)错误: 未找到命令 '$$cmd'$(NC)"; \
 			exit 1; \
 		fi \
 	done
+	@echo "$(GREEN)所有必要的命令都已安装$(NC)"
 
 # 创建虚拟环境和安装依赖
 deps: check-reqs install-deps create-venv
@@ -79,13 +80,17 @@ ifeq ($(UNAME_S),Darwin)
 		echo "$(YELLOW)正在安装 Cairo...$(NC)"; \
 		brew install cairo; \
 	fi
-	@if ! brew list python >/dev/null 2>&1; then \
-		echo "$(YELLOW)正在安装 Python...$(NC)"; \
-		brew install python; \
+	@if ! command -v pandoc >/dev/null 2>&1; then \
+		echo "$(YELLOW)正在安装 Pandoc...$(NC)"; \
+		brew install pandoc; \
+	fi
+	@if ! command -v xelatex >/dev/null 2>&1; then \
+		echo "$(YELLOW)正在安装 MacTeX...$(NC)"; \
+		brew install --cask mactex-no-gui; \
 	fi
 else ifeq ($(UNAME_S),Linux)
 	@echo "$(YELLOW)请确保已安装必要的系统依赖：$(NC)"
-	@echo "sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-fonts-extra python3-venv python3-pip cairo-dev inkscape"
+	@echo "sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-fonts-extra python3-venv python3-pip cairo-dev inkscape texlive-lang-chinese"
 endif
 
 # 创建并更新虚拟环境

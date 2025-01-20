@@ -1,7 +1,7 @@
 # 仓库配置
 repository:
-  url: "https://github.com/TanStack/router.git"
-  branch: "main"
+  url: "https://github.com/gin-gonic/gin.git"
+  branch: "master"
 
 # 所有路径都相对于项目根目录
 workspace_dir: "./repo-workspace"

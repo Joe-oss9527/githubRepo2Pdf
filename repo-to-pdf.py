@@ -334,6 +334,21 @@ class RepoPDFConverter:
         
         return cleaned_markdown
 
+    def _clean_text(self, text: str) -> str:
+        """清理文本内容，处理不可见字符和特殊字符"""
+        # 移除不可见字符，但保留换行
+        text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r')
+        
+        # 处理制表符
+        text = text.replace('\t', '    ')  # 将制表符替换为4个空格
+        
+        # 只处理 LaTeX 中最基本的特殊字符
+        text = text.replace('\\', '\\textbackslash{}')  # 处理 \ 符号
+        text = text.replace('$', '\\$')  # 处理 $ 符号
+        text = text.replace('%', '\\%')  # 处理 % 符号
+        
+        return text
+
     def process_file(self, file_path: Path, repo_root: Path) -> str:
         """处理单个文件，返回对应的 Markdown 内容"""
         import re
@@ -373,9 +388,9 @@ class RepoPDFConverter:
                 logger.debug(f"跳过大文件 ({file_size:.1f}MB): {file_path}")
                 return ""
             
-            # 读取文件内容
+            # 读取文件内容并清理
             with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
+                content = self._clean_text(f.read().strip())
             
             # 如果是 Markdown 或 MDX 文件，处理图片路径
             if ext in {'.md', '.mdx'}:
@@ -452,7 +467,7 @@ class RepoPDFConverter:
             
         return re.sub(pattern, replacer, line)
 
-    def create_pandoc_yaml(self) -> Path:
+    def create_pandoc_yaml(self, repo_name: str) -> Path:
         """创建 Pandoc 的 YAML 配置文件"""
         pdf_config = self.config.get('pdf_settings', {})
         
@@ -477,15 +492,43 @@ class RepoPDFConverter:
                 'colorlinks': True,
                 'linkcolor': 'blue',
                 'urlcolor': 'blue',
-                # LaTeX 设置
                 'header-includes': [
                     # 加载必要的包
-                    '\\usepackage{xeCJK}',
-                    '\\usepackage{fvextra}',
+                    '\\usepackage{fontspec}',    # XeTeX 的字体支持
+                    '\\usepackage{xunicode}',    # Unicode 支持
+                    '\\usepackage{xeCJK}',       # 中文支持
+                    '\\usepackage{fvextra}',     # 代码块支持
                     '\\usepackage[most]{tcolorbox}',
                     '\\usepackage{listings}',
                     '\\usepackage{graphicx}',
                     '\\usepackage{float}',
+                    '\\usepackage{sectsty}',   # 节标题格式支持
+                    '\\usepackage{hyperref}',  # hyperref 应该最后加载
+                    '\\usepackage{longtable}', # 基本表格支持
+                    '\\usepackage{ragged2e}',  # 段落对齐支持
+                    # 段落对齐设置
+                    '\\AtBeginDocument{\\justifying}',
+                    # PDF 元数据设置
+                    '\\hypersetup{',
+                    f'    pdftitle={{{repo_name} 代码文档}},',
+                    f'    pdfauthor={{{pdf_config.get("metadata", {}).get("author", "Repo-to-PDF Generator")}}},',
+                    f'    pdfcreator={{{pdf_config.get("metadata", {}).get("creator", "LaTeX")}}},',
+                    f'    pdfproducer={{{pdf_config.get("metadata", {}).get("producer", "XeLaTeX")}}},',
+                    '    colorlinks=true,',
+                    '    linkcolor=blue,',
+                    '    urlcolor=blue',
+                    '}',
+                    # 字体设置
+                    '\\defaultfontfeatures{Mapping=tex-text}',  # 启用 TeX 连字
+                    # 中文字体设置
+                    '\\setCJKmainfont[BoldFont={Songti SC Bold},ItalicFont={Songti SC Light}]{Songti SC}',
+                    '\\setCJKsansfont[BoldFont={PingFang SC Semibold},ItalicFont={PingFang SC Light}]{PingFang SC}',
+                    '\\setCJKmonofont{STFangsong}',
+                    # 中文断行设置
+                    '\\XeTeXlinebreaklocale "zh"',
+                    '\\XeTeXlinebreakskip = 0pt plus 1pt',
+                    # 标题格式设置
+                    '\\allsectionsfont{\\CJKfamily{sf}}',  # 使用 sectsty 包的命令设置所有标题字体
                     # 图片设置
                     '\\DeclareGraphicsExtensions{.png,.jpg,.jpeg,.gif}',
                     '\\graphicspath{{./images/}}',
@@ -497,12 +540,6 @@ class RepoPDFConverter:
                     '\\fvset{breaklines=true, breakanywhere=true}',
                     # 代码框设置
                     '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
-                    # 定义新的语言
-                    '\\lstdefinelanguage{typescript}[]{javascript}{%',
-                    '  morekeywords={interface,type,implements,namespace,declare,abstract,',
-                    '                as,is,keyof,in,extends,readonly,instanceof,unique,',
-                    '                infer,await,async,module,namespace,declare,export,import},',
-                    '}',
                     # 设置 listings 包的全局选项
                     '\\lstset{%',
                     '  basicstyle=\\ttfamily\\small,',
@@ -523,14 +560,12 @@ class RepoPDFConverter:
                     '  numbers=none,',
                     '  inputencoding=utf8,',
                     '  extendedchars=true,',
-                    '  literate={á}{{\\\'a}}1 {é}{{\\\'e}}1 {í}{{\\\'i}}1 {ó}{{\\\'o}}1 {ú}{{\\\'u}}1',
-                    '           {Á}{{\\\'A}}1 {É}{{\\\'E}}1 {Í}{{\\\'I}}1 {Ó}{{\\\'O}}1 {Ú}{{\\\'U}}1',
-                    '           {à}{{\`a}}1 {è}{{\`e}}1 {ì}{{\`i}}1 {ò}{{\`o}}1 {ù}{{\`u}}1',
-                    '           {À}{{\`A}}1 {È}{{\\`E}}1 {Ì}{{\`I}}1 {Ò}{{\`O}}1 {Ù}{{\`U}}1',
-                    '           {ä}{{\"a}}1 {ë}{{\"e}}1 {ï}{{\"i}}1 {ö}{{\"o}}1 {ü}{{\"u}}1',
-                    '           {Ä}{{\"A}}1 {Ë}{{\"E}}1 {Ï}{{\"I}}1 {Ö}{{\"O}}1 {Ü}{{\"U}}1',
-                    '           {â}{{\^a}}1 {ê}{{\^e}}1 {î}{{\^i}}1 {ô}{{\^o}}1 {û}{{\^u}}1',
-                    '           {Â}{{\^A}}1 {Ê}{{\^E}}1 {Î}{{\^I}}1 {Ô}{{\^O}}1 {Û}{{\^U}}1',
+                    '}',
+                    # 定义新的语言
+                    '\\lstdefinelanguage{typescript}[]{javascript}{%',
+                    '  morekeywords={interface,type,implements,namespace,declare,abstract,',
+                    '                as,is,keyof,in,extends,readonly,instanceof,unique,',
+                    '                infer,await,async,module,namespace,declare,export,import},',
                     '}',
                     '\\lstdefinelanguage{tsx}{',
                     '  basicstyle=\\ttfamily,',
@@ -586,24 +621,6 @@ class RepoPDFConverter:
                     '}',
                     # 标题和段落设置
                     '\\setlength{\\headheight}{15pt}',
-                    # 中文字体设置
-                    '\\setCJKmainfont[BoldFont={Songti SC Bold},ItalicFont={Songti SC Light}]{Songti SC}',
-                    '\\setCJKsansfont[BoldFont={PingFang SC Semibold},ItalicFont={PingFang SC Light}]{PingFang SC}',
-                    '\\setCJKmonofont{STFangsong}',
-                    # 中文断行设置
-                    '\\XeTeXlinebreaklocale "zh"',
-                    '\\XeTeXlinebreakskip = 0pt plus 1pt',
-                    # 标题字体设置
-                    '\\usepackage{sectsty}',
-                    '\\sectionfont{\\CJKfamily{sf}}',
-                    '\\subsectionfont{\\CJKfamily{sf}}',
-                    # PDF 元数据设置
-                    '\\hypersetup{',
-                    f'    pdftitle={{{repo_path.name} 代码文档}},',
-                    f'    pdfauthor={{{pdf_config.get("metadata", {}).get("author", "Repo-to-PDF Generator")}}},',
-                    f'    pdfcreator={{{pdf_config.get("metadata", {}).get("creator", "LaTeX")}}},',
-                    f'    pdfproducer={{{pdf_config.get("metadata", {}).get("producer", "XeLaTeX")}}}',
-                    '}'
                 ]
             }
         }
@@ -628,7 +645,7 @@ class RepoPDFConverter:
             
             # 创建临时文件
             temp_md = self.create_temp_markdown()
-            yaml_path = self.create_pandoc_yaml()
+            yaml_path = self.create_pandoc_yaml(repo_path.name)
             
             # 生成输出路径（已经是相对于项目根目录）
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -649,27 +666,18 @@ class RepoPDFConverter:
             # 调用 pandoc 进行转换，添加更多选项
             cmd = [
                 'pandoc',
-                '-f', 'markdown',  # 从 Markdown 输入
-                '-t', 'pdf',
-                '--defaults', str(yaml_path),
-                '--toc',
-                '--toc-depth=2',
+                '-f', 'markdown+pipe_tables+grid_tables',  # 基本表格支持
                 '--pdf-engine=xelatex',
                 '--wrap=none',
+                '--toc',
+                '--toc-depth=2',
+                '--defaults', str(yaml_path),
                 '-V', 'geometry:margin=0.5in',
                 '-V', 'fontsize=10pt',
                 '--highlight-style=tango',
-                '--resource-path=' + str(self.temp_dir),  # 修改资源路径设置
+                '--resource-path=' + str(self.temp_dir),
                 '--standalone',
-                # LaTeX 设置
-                '-V', 'header-includes=\\usepackage{ragged2e}',
-                '-V', 'header-includes=\\usepackage{graphicx}',  # 添加图片支持
-                '-V', 'header-includes=\\usepackage{float}',     # 添加浮动体支持
-                '-V', 'header-includes=\\AtBeginDocument{\\justifying}',
-                # 优化设置
-                '--pdf-engine-opt=-halt-on-error',
-                '--pdf-engine-opt=-interaction=nonstopmode',
-                # 移除内存设置，因为格式不正确
+                # 输出设置
                 '-o', str(output_pdf),
                 str(temp_md)
             ]
