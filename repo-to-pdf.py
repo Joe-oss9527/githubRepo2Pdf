@@ -44,16 +44,33 @@ class GitRepoManager:
             if self.repo_dir.exists():
                 logger.info(f"Repository exists, pulling latest changes from {self.branch}")
                 repo = git.Repo(self.repo_dir)
+                # 确保远程分支存在
+                if not repo.remotes:
+                    repo.create_remote('origin', self.repo_url)
                 origin = repo.remotes.origin
-                origin.pull(self.branch)
+                # 获取最新的远程分支信息
+                origin.fetch()
+                # 重置到远程分支的最新状态
+                repo.git.reset('--hard', f'origin/{self.branch}')
             else:
                 logger.info(f"Cloning repository from {self.repo_url}")
-                git.Repo.clone_from(self.repo_url, self.repo_dir, branch=self.branch)
+                # 使用官方推荐的克隆参数
+                git.Repo.clone_from(
+                    url=self.repo_url,
+                    to_path=self.repo_dir,
+                    branch=self.branch,
+                    depth=1,  # 浅克隆
+                    single_branch=True,  # 单分支
+                    filter='blob:none'  # 不下载大文件，只获取文件树
+                )
                 
             return self.repo_dir
             
         except git.GitCommandError as e:
             logger.error(f"Git operation failed: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during git operation: {str(e)}")
             raise
 
 class RepoPDFConverter:
