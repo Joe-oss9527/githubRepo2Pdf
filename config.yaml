@@ -1,6 +1,6 @@
 # 仓库配置
 repository:
-  url: "https://github.com/facebook/react.git"
+  url: "https://github.com/apache/answer.git"
   branch: "main"
 
 # 所有路径都相对于项目根目录
@@ -28,6 +28,8 @@ ignores:
   - ".next"
   - ".nuxt"
   - "vendor"
+  - ".vaunt"
+  - ".github"
   
   # 锁定文件
   - "package-lock.json"
@@ -66,4 +68,10 @@ ignores:
   - "*.swo"
   - ".project"
   - ".settings"
+
+  # 其他
+  - "docs/release"
+  - "docs/swagger.json"
+  - "docs/swagger.yaml"
+
   

@@ -440,14 +440,34 @@ class RepoPDFConverter:
                 def process_image_path(match):
                     img_path = match.group(2)
                     if not img_path.startswith(('http://', 'https://', '/')):
-                        # 相对路径的图片
-                        abs_img_path = (file_path.parent / img_path).resolve()
-                        if abs_img_path.exists() and abs_img_path.suffix.lower() in self.image_extensions:
-                            # 复制图片到临时目录
-                            target_path = images_dir / abs_img_path.name
-                            shutil.copy2(abs_img_path, target_path)
-                            # 返回更新后的图片引用
-                            return f"![{match.group(1)}](images/{target_path.name})"
+                        # 尝试多种路径解析方式
+                        possible_paths = [
+                            # 1. 从当前文件目录解析
+                            file_path.parent / img_path,
+                            # 2. 从仓库根目录解析
+                            repo_root / img_path,
+                            # 3. 处理 ../类型的相对路径
+                            (file_path.parent / img_path).resolve(),
+                            # 4. 处理 ./类型的相对路径
+                            (file_path.parent / img_path.lstrip('./')).resolve(),
+                            # 5. 如果路径以 docs/ 开头，尝试从仓库根目录解析
+                            repo_root / img_path.lstrip('./')
+                        ]
+                        
+                        # 尝试所有可能的路径
+                        for abs_img_path in possible_paths:
+                            try:
+                                if abs_img_path.exists() and abs_img_path.suffix.lower() in self.image_extensions:
+                                    # 复制图片到临时目录
+                                    target_path = images_dir / abs_img_path.name
+                                    shutil.copy2(abs_img_path, target_path)
+                                    logger.debug(f"成功处理图片: {abs_img_path} -> {target_path}")
+                                    return f"![{match.group(1)}](images/{target_path.name})"
+                            except Exception as e:
+                                logger.debug(f"尝试路径 {abs_img_path} 失败: {e}")
+                                continue
+                        
+                        logger.warning(f"无法找到图片: {img_path}, 在文件: {file_path}")
                     return match.group(0)
                 
                 # 处理 Markdown 中的图片引用
@@ -485,8 +505,25 @@ class RepoPDFConverter:
         lines = []
         for line in content.splitlines():
             if len(line) > max_length:
+                # 检查是否是数组
+                if '[' in line and ']' in line:
+                    # 在逗号后添加换行
+                    indent = ' ' * (len(line) - len(line.lstrip()))
+                    parts = line.split(',')
+                    formatted_parts = []
+                    current_line = parts[0]
+                    
+                    for part in parts[1:]:
+                        if len(current_line + ',' + part) > max_length:
+                            formatted_parts.append(current_line + ',')
+                            current_line = indent + part.lstrip()
+                        else:
+                            current_line += ',' + part
+                            
+                    formatted_parts.append(current_line)
+                    line = '\n'.join(formatted_parts)
                 # 对于包含长字符串的行进行特殊处理
-                if '"' in line or "'" in line:
+                elif '"' in line or "'" in line:
                     line = self._break_long_strings(line)
             lines.append(line)
         return '\n'.join(lines)
@@ -495,7 +532,7 @@ class RepoPDFConverter:
         """处理包含长字符串的行"""
         import re
         # 查找长字符串（包括包名和版本号）
-        pattern = r'["\']([^"\']{100,})["\']'
+        pattern = r'["\']([^"\']{80,})["\']'
         
         def replacer(match):
             # 将长字符串每隔 80 个字符添加换行和适当的缩进
@@ -705,9 +742,13 @@ class RepoPDFConverter:
                     '\\setkeys{Gin}{width=0.8\\linewidth,keepaspectratio}',
                     # 代码块设置
                     '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
-                    '\\fvset{breaklines=true, breakanywhere=true}',
+                    '\\fvset{breaklines=true, breakanywhere=true, breakafter=\\\\}',
+                    # 增加对长行的支持
+                    '\\setlength{\\textwidth}{\\paperwidth}',
+                    '\\addtolength{\\textwidth}{-2in}',
+                    '\\setlength{\\linewidth}{\\textwidth}',
                     # 代码框设置
-                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
+                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners,width=\\textwidth]}{\\end{tcolorbox}}',
                     # 设置 listings 包的全局选项
                     '\\lstset{%',
                     '  basicstyle=\\ttfamily\\small,',
