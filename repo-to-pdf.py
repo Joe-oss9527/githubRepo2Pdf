@@ -743,10 +743,6 @@ class RepoPDFConverter:
                     # 代码块设置
                     '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
                     '\\fvset{breaklines=true, breakanywhere=true, breakafter=\\\\}',
-                    # # 增加对长行的支持
-                    # '\\setlength{\\textwidth}{\\paperwidth}',
-                    # '\\addtolength{\\textwidth}{-2in}',
-                    # '\\setlength{\\linewidth}{\\textwidth}',
                     # 代码框设置
                     '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
                     # 设置 listings 包的全局选项
