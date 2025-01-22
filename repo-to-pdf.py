@@ -532,7 +532,7 @@ class RepoPDFConverter:
         """处理包含长字符串的行"""
         import re
         # 查找长字符串（包括包名和版本号）
-        pattern = r'["\']([^"\']{80,})["\']'
+        pattern = r'["\']([^"\']{100,})["\']'
         
         def replacer(match):
             # 将长字符串每隔 80 个字符添加换行和适当的缩进
@@ -743,12 +743,12 @@ class RepoPDFConverter:
                     # 代码块设置
                     '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
                     '\\fvset{breaklines=true, breakanywhere=true, breakafter=\\\\}',
-                    # 增加对长行的支持
-                    '\\setlength{\\textwidth}{\\paperwidth}',
-                    '\\addtolength{\\textwidth}{-2in}',
-                    '\\setlength{\\linewidth}{\\textwidth}',
+                    # # 增加对长行的支持
+                    # '\\setlength{\\textwidth}{\\paperwidth}',
+                    # '\\addtolength{\\textwidth}{-2in}',
+                    # '\\setlength{\\linewidth}{\\textwidth}',
                     # 代码框设置
-                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners,width=\\textwidth]}{\\end{tcolorbox}}',
+                    '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
                     # 设置 listings 包的全局选项
                     '\\lstset{%',
                     '  basicstyle=\\ttfamily\\small,',

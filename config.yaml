@@ -73,5 +73,3 @@ ignores:
   - "docs/release"
   - "docs/swagger.json"
   - "docs/swagger.yaml"
-
-  
