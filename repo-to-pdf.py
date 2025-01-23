@@ -12,6 +12,7 @@ import markdown
 from bs4 import BeautifulSoup
 import hashlib
 from html2text import HTML2Text
+import re
 
 # 设置 Cairo 库路径
 os.environ['DYLD_LIBRARY_PATH'] = '/opt/homebrew/lib:' + os.environ.get('DYLD_LIBRARY_PATH', '')
@@ -317,6 +318,9 @@ class RepoPDFConverter:
 
     def process_markdown(self, content: str) -> str:
         """处理 Markdown 内容，处理图片和 SVG"""
+        # 预处理代码块，移除 title 属性
+        content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```\1', content)
+        
         # 先转换为 HTML
         html = self.md.convert(content)
         
@@ -487,13 +491,13 @@ class RepoPDFConverter:
                     
                 # 对于 package.json 和 package-lock.json 文件不使用高亮
                 if file_path.name in ['package.json', 'package-lock.json', 'yarn.lock']:
-                    return f"\n\n# {rel_path}\n\n```\n{content}\n```\n\n"
+                    return f"\n\n# {rel_path}\n\n`````\n{content}\n`````\n\n"
                     
                 # 对于其他文件使用语言高亮
                 lang = self.code_extensions[ext]
                 # 处理长字符串，将它们分割成多行
                 content = self._process_long_lines(content)
-                return f"\n\n# {rel_path}\n\n```{lang}\n{content}\n```\n\n"
+                return f"\n\n# {rel_path}\n\n`````{lang}\n{content}\n`````\n\n"
                 
             return ""
         except UnicodeDecodeError:
