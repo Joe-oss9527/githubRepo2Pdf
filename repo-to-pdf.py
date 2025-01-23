@@ -12,6 +12,7 @@ import markdown
 from bs4 import BeautifulSoup
 import hashlib
 import re
+import requests
 
 # 设置 Cairo 库路径
 os.environ['DYLD_LIBRARY_PATH'] = '/opt/homebrew/lib:' + os.environ.get('DYLD_LIBRARY_PATH', '')
@@ -330,30 +331,136 @@ class RepoPDFConverter:
             logger.warning(f"Failed to convert SVG content to PNG: {e}")
             return ""
 
+    def _download_remote_image(self, url: str, images_dir: Path) -> str:
+        """下载远程图片到本地"""
+        try:
+            # 创建 images 目录
+            images_dir.mkdir(exist_ok=True)
+            
+            # 生成文件名基础部分（不带扩展名）
+            hash_name = hashlib.md5(url.encode()).hexdigest()
+            
+            # 下载图片
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            # 从 Content-Type 获取实际格式
+            content_type = response.headers.get('Content-Type', '').lower()
+            if 'svg' in content_type or url.lower().endswith('.svg'):
+                # 如果是 SVG，转换为 PNG
+                png_path = images_dir / f"{hash_name}.png"
+                if png_path.exists():
+                    return f"images/{png_path.name}"
+                
+                # 保存 SVG 内容
+                if self.convert_svg_to_png(response.text, png_path):
+                    return f"images/{png_path.name}"
+            else:
+                # 对于其他格式，从 URL 或 Content-Type 确定扩展名
+                if 'image/png' in content_type:
+                    ext = '.png'
+                elif 'image/jpeg' in content_type:
+                    ext = '.jpg'
+                elif 'image/gif' in content_type:
+                    ext = '.gif'
+                else:
+                    # 从 URL 获取扩展名
+                    ext = os.path.splitext(url)[1]
+                    if not ext:
+                        ext = '.png'  # 默认使用 .png
+                
+                local_path = images_dir / f"{hash_name}{ext}"
+                if local_path.exists():
+                    return f"images/{local_path.name}"
+                
+                # 保存图片
+                with open(local_path, 'wb') as f:
+                    f.write(response.content)
+                
+                return f"images/{local_path.name}"
+                
+            return ""
+        except Exception as e:
+            logger.warning(f"Failed to download remote image {url}: {e}")
+            return ""
+
     def process_markdown(self, content: str) -> str:
         """处理 Markdown 内容，处理图片和 SVG"""
         # 1. 处理代码块的 title 属性
         content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```\1', content)
         
-        # 2. 处理 Markdown 图片语法
+        # 2. 收集引用式链接定义
+        reference_links = {}
+        for match in re.finditer(r'^\[(.*?)\]:\s*(\S+)(?:\s+"(.*?)")?$', content, re.MULTILINE):
+            ref_id, url, title = match.groups()
+            reference_links[ref_id] = {'url': url, 'title': title}
+        
+        # 3. 处理引用式图片链接
+        def process_ref_image(match):
+            alt = match.group(1) or ''
+            ref_id = match.group(2)
+            
+            if ref_id in reference_links:
+                ref = reference_links[ref_id]
+                url = ref['url']
+                title = ref['title']
+                
+                # 处理远程图片
+                if url.startswith(('http://', 'https://')):
+                    images_dir = self.temp_dir / "images"
+                    new_path = self._download_remote_image(url, images_dir)
+                    if new_path:
+                        if title:
+                            return f'![{alt}]({new_path} "{title}")'
+                        return f'![{alt}]({new_path})'
+                    return ''
+                
+                # 处理本地 SVG
+                if url.lower().endswith('.svg'):
+                    new_path = self._convert_image_to_png(url)
+                    if title:
+                        return f'![{alt}]({new_path} "{title}")'
+                    return f'![{alt}]({new_path})'
+                
+                # 其他情况保持原样
+                if title:
+                    return f'![{alt}]({url} "{title}")'
+                return f'![{alt}]({url})'
+            return match.group(0)
+        
+        # 处理引用式图片链接
+        content = re.sub(r'!\[(.*?)\]\[(.*?)\]', process_ref_image, content)
+        
+        # 4. 处理普通图片语法
         def process_md_image(match):
-            alt = match.group(1) or ''  # 可能为空
+            alt = match.group(1) or ''
             path = match.group(2)
             title = match.group(3) or '' if len(match.groups()) > 2 else ''
             
+            # 处理远程图片（包括动态徽章）
+            if path.startswith(('http://', 'https://')):
+                images_dir = self.temp_dir / "images"
+                new_path = self._download_remote_image(path, images_dir)
+                if new_path:
+                    if title:
+                        return f'![{alt}]({new_path} "{title}")'
+                    return f'![{alt}]({new_path})'
+                return ''  # 如果下载失败，移除图片引用
+            
+            # 处理本地 SVG
             if path.lower().endswith('.svg'):
                 new_path = self._convert_image_to_png(path)
                 if title:
                     return f'![{alt}]({new_path} "{title}")'
                 return f'![{alt}]({new_path})'
-            return match.group(0)  # 保持原样
+            return match.group(0)
         
         # 处理带 title 的图片
         content = re.sub(r'!\[(.*?)\]\((.*?)\s+"(.*?)"\)', process_md_image, content)
         # 处理不带 title 的图片
         content = re.sub(r'!\[(.*?)\]\((.*?)\)', process_md_image, content)
         
-        # 3. 处理 HTML 图片标签
+        # 5. 处理 HTML 图片标签
         def process_html_image(match):
             tag = match.group(0)
             soup = BeautifulSoup(tag, 'html.parser')
@@ -371,7 +478,7 @@ class RepoPDFConverter:
         # 匹配 HTML img 标签，考虑单引号和双引号
         content = re.sub(r'<img\s+[^>]+>', process_html_image, content, flags=re.IGNORECASE)
         
-        # 4. 处理内嵌 SVG
+        # 6. 处理内嵌 SVG
         def process_svg(match):
             svg_content = match.group(0)
             if self._is_valid_svg(svg_content):
@@ -418,8 +525,8 @@ class RepoPDFConverter:
             try:
                 if ext.lower() in {'.svg', '.svgz'}:
                     # 处理 SVG 文件
-                    png_name = self.process_svg_file(file_path, images_dir)
-                    if not png_name:
+                    new_path = self._convert_image_to_png(str(file_path))
+                    if not new_path:
                         return ""
                 else:
                     # 处理其他图片文件
