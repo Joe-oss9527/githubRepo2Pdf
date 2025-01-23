@@ -295,95 +295,123 @@ class RepoPDFConverter:
                 logger.warning(f"Backup SVG conversion also failed: {e2}")
             return False
 
-    def process_svg_file(self, svg_path: Path, images_dir: Path) -> str:
-        """处理 SVG 文件，转换为 PNG"""
+    def _convert_image_to_png(self, path: str) -> str:
+        """转换图片为 PNG 格式"""
         try:
-            with open(svg_path, 'r', encoding='utf-8') as f:
-                svg_content = f.read()
+            # 创建 images 目录
+            images_dir = self.temp_dir / "images"
+            images_dir.mkdir(exist_ok=True)
             
-            # 生成唯一的文件名
-            hash_name = hashlib.md5(svg_content.encode()).hexdigest()
-            png_path = images_dir / f"{hash_name}.png"
-            
-            # 如果 PNG 已存在，直接返回路径
-            if png_path.exists():
-                return str(png_path.name)
-            
-            # 转换 SVG 到 PNG
-            if self.convert_svg_to_png(svg_content, png_path):
-                return str(png_path.name)
-        except Exception as e:
-            logger.warning(f"Failed to process SVG file {svg_path}: {e}")
-        return ""
-
-    def process_markdown(self, content: str) -> str:
-        """处理 Markdown 内容，处理图片和 SVG"""
-        # 将 title 属性转换为 Pandoc 属性语法
-        content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```\1', content)
-        
-        # 先转换为 HTML
-        html = self.md.convert(content)
-        
-        # 使用 BeautifulSoup 处理 HTML
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        # 处理所有 SVG 标签
-        for svg in soup.find_all('svg'):
-            try:
-                # 创建临时目录下的 images 目录
-                images_dir = self.temp_dir / "images"
-                images_dir.mkdir(exist_ok=True)
+            # 处理相对路径和绝对路径
+            img_path = Path(path)
+            if not img_path.is_absolute():
+                img_path = self.project_root / path
                 
-                # 转换 SVG 为 PNG
-                svg_content = str(svg)
+            if not img_path.exists():
+                return path  # 如果文件不存在，返回原路径
+                
+            if path.lower().endswith('.svg'):
+                # SVG 转 PNG 的处理
+                with open(img_path, 'r', encoding='utf-8') as f:
+                    svg_content = f.read()
+                
                 hash_name = hashlib.md5(svg_content.encode()).hexdigest()
                 png_path = images_dir / f"{hash_name}.png"
                 
+                if png_path.exists():
+                    return f"images/{png_path.name}"
+                    
                 if self.convert_svg_to_png(svg_content, png_path):
-                    # 创建新的 img 标签替换 svg
-                    img = soup.new_tag('img')
-                    img['src'] = f"images/{png_path.name}"
-                    svg.replace_with(img)
-                else:
-                    svg.decompose()
-            except Exception as e:
-                logger.warning(f"Failed to process inline SVG: {e}")
-                svg.decompose()
+                    return f"images/{png_path.name}"
+                    
+            return path
+        except Exception as e:
+            logger.warning(f"Failed to convert image {path}: {e}")
+            return path
+
+    def _is_valid_svg(self, content: str) -> bool:
+        """检查是否是有效的 SVG 内容"""
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            svg = soup.find('svg')
+            return svg is not None and (svg.get('width') or svg.get('height') or svg.get('viewBox'))
+        except:
+            return False
+
+    def _convert_svg_content_to_png(self, svg_content: str) -> str:
+        """将 SVG 内容转换为 PNG"""
+        try:
+            images_dir = self.temp_dir / "images"
+            images_dir.mkdir(exist_ok=True)
             
-        # 检查所有图片标签
-        for img in soup.find_all('img'):
+            hash_name = hashlib.md5(svg_content.encode()).hexdigest()
+            png_path = images_dir / f"{hash_name}.png"
+            
+            if png_path.exists():
+                return png_path.name
+                
+            if self.convert_svg_to_png(svg_content, png_path):
+                return png_path.name
+                
+            return ""
+        except Exception as e:
+            logger.warning(f"Failed to convert SVG content to PNG: {e}")
+            return ""
+
+    def process_markdown(self, content: str) -> str:
+        """处理 Markdown 内容，处理图片和 SVG"""
+        # 1. 处理代码块的 title 属性
+        content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```\1', content)
+        
+        # 2. 处理 Markdown 图片语法
+        def process_md_image(match):
+            alt = match.group(1) or ''  # 可能为空
+            path = match.group(2)
+            title = match.group(3) or '' if len(match.groups()) > 2 else ''
+            
+            if path.lower().endswith('.svg'):
+                new_path = self._convert_image_to_png(path)
+                if title:
+                    return f'![{alt}]({new_path} "{title}")'
+                return f'![{alt}]({new_path})'
+            return match.group(0)  # 保持原样
+        
+        # 处理带 title 的图片
+        content = re.sub(r'!\[(.*?)\]\((.*?)\s+"(.*?)"\)', process_md_image, content)
+        # 处理不带 title 的图片
+        content = re.sub(r'!\[(.*?)\]\((.*?)\)', process_md_image, content)
+        
+        # 3. 处理 HTML 图片标签
+        def process_html_image(match):
+            tag = match.group(0)
+            soup = BeautifulSoup(tag, 'html.parser')
+            img = soup.find('img')
+            if not img:
+                return tag
+                
             src = img.get('src', '')
             if src.lower().endswith('.svg'):
-                try:
-                    # 处理 SVG 图片引用
-                    if not src.startswith(('http://', 'https://', '/')):
-                        images_dir = self.temp_dir / "images"
-                        images_dir.mkdir(exist_ok=True)
-                        svg_path = Path(src)
-                        if svg_path.exists():
-                            png_name = self.process_svg_file(svg_path, images_dir)
-                            if png_name:
-                                img['src'] = f"images/{png_name}"
-                            else:
-                                img.decompose()
-                except Exception as e:
-                    logger.warning(f"Failed to process SVG image reference: {e}")
-                    img.decompose()
-            elif not any(src.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.ico']):
-                img.decompose()
-            
-        # 获取处理后的 HTML
-        cleaned_html = str(soup)
+                new_src = self._convert_image_to_png(src)
+                img['src'] = new_src
+                return str(img)
+            return tag
         
-        # 将 HTML 转回 Markdown，保留代码块格式
-        h2t = HTML2Text()
-        h2t.body_width = 0  # 不限制行宽
-        h2t.code_block_style = "fenced"  # 使用 ``` 风格的代码块
-        h2t.ignore_emphasis = False
-        h2t.ignore_links = False
-        cleaned_markdown = h2t.handle(cleaned_html)
+        # 匹配 HTML img 标签，考虑单引号和双引号
+        content = re.sub(r'<img\s+[^>]+>', process_html_image, content, flags=re.IGNORECASE)
         
-        return cleaned_markdown
+        # 4. 处理内嵌 SVG
+        def process_svg(match):
+            svg_content = match.group(0)
+            if self._is_valid_svg(svg_content):
+                png_path = self._convert_svg_content_to_png(svg_content)
+                if png_path:
+                    return f'![](images/{png_path})'
+            return match.group(0)
+        
+        # 匹配内嵌的 SVG 标签
+        content = re.sub(r'<svg\s*.*?>.*?</svg>', process_svg, content, flags=re.DOTALL | re.IGNORECASE)
+        
+        return content
 
     def _clean_text(self, text: str) -> str:
         """清理文本内容，只处理特殊字符，保持原始格式"""
