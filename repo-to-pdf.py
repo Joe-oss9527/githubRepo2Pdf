@@ -132,33 +132,6 @@ class RepoPDFConverter:
             '.mdx': 'mdx'  # 添加 MDX 支持
         }
         
-        # 语言缩进配置（基于各语言的最佳实践）
-        self.language_indents = {
-            'python': 4,      # PEP 8
-            'go': 8,         # Go 标准
-            'javascript': 2,  # JavaScript 常用
-            'typescript': 2,  # TypeScript 常用
-            'java': 4,       # Java 常用
-            'c': 4,          # C 常用
-            'cpp': 4,        # C++ 常用
-            'rust': 4,       # Rust 常用
-            'ruby': 2,       # Ruby 常用
-            'php': 4,        # PSR-2
-            'html': 2,       # HTML 常用
-            'css': 2,        # CSS 常用
-            'yaml': 2,       # YAML 常用
-            'markdown': 4,   # Markdown 常用
-            'bash': 2,       # Shell 常用
-            'sql': 2,        # SQL 常用
-            'csharp': 4,     # C# 常用
-            'vue': 2,        # Vue 常用
-            'svelte': 2,     # Svelte 常用
-            'graphql': 2,    # GraphQL 常用
-            'toml': 2,       # TOML 常用
-            'xml': 2,        # XML 常用
-            'mdx': 2,        # MDX 常用
-        }
-        
         # 初始化 Markdown 转换器
         self.md = markdown.Markdown(extensions=['fenced_code', 'tables'])
         
@@ -580,129 +553,6 @@ class RepoPDFConverter:
             
         return re.sub(pattern, replacer, line)
 
-    def create_language_definitions(self) -> list:
-        """创建所有支持的语言定义"""
-        definitions = []
-        
-        # TypeScript 定义
-        definitions.extend([
-            '\\lstdefinelanguage{typescript}[]{javascript}{%',
-            '  morekeywords={interface,type,implements,namespace,declare,abstract,',
-            '                as,is,keyof,in,extends,readonly,instanceof,unique,',
-            '                infer,await,async,module,namespace,declare,export,import},',
-            f'  tabsize={self.language_indents["typescript"]},',
-            '}',
-        ])
-        
-        # Go 语言定义
-        definitions.extend([
-            '\\lstdefinelanguage{go}{',
-            '  morekeywords={package,import,func,return,var,const,type,struct,interface,',
-            '                if,else,for,range,break,continue,switch,case,default,',
-            '                go,chan,select,defer,fallthrough,goto,map,make,new},',
-            '  sensitive=true,',
-            '  morecomment=[l]{//},',
-            '  morecomment=[s]{/*}{*/},',
-            '  morestring=[b]",',
-            '  morestring=[b]`,',
-            '  morestring=[b]\',',
-            '  keywordstyle=\\color{blue},',
-            '  commentstyle=\\color{darkgreen},',
-            '  stringstyle=\\color{red},',
-            '  basicstyle=\\ttfamily\\small\\keepspaces,',
-            f'  tabsize={self.language_indents["go"]},',
-            '}',
-        ])
-        
-        # Python 定义
-        definitions.extend([
-            '\\lstdefinelanguage{python}{',
-            '  morekeywords={def,class,from,import,return,yield,raise,try,except,finally,',
-            '                if,elif,else,for,while,break,continue,pass,assert,with,as,',
-            '                lambda,global,nonlocal,True,False,None,and,or,not,is,in},',
-            '  sensitive=true,',
-            '  morecomment=[l]\\#,',
-            '  morestring=[b]",',
-            '  morestring=[b]\',',
-            '  morestring=[s]{"""}{"""},',
-            '  morestring=[s]{\'\'\'}{\'\'\'}, ',
-            '  keywordstyle=\\color{blue},',
-            '  commentstyle=\\color{darkgreen},',
-            '  stringstyle=\\color{red},',
-            '  basicstyle=\\ttfamily\\small\\keepspaces,',
-            f'  tabsize={self.language_indents["python"]},',
-            '}',
-        ])
-        
-        # JavaScript 定义
-        definitions.extend([
-            '\\lstdefinelanguage{javascript}{',
-            '  morekeywords={const,let,var,function,class,extends,implements,import,export,',
-            '                return,if,else,for,while,do,switch,case,break,continue,try,',
-            '                catch,finally,throw,async,await,new,this,super,static},',
-            '  sensitive=true,',
-            '  morecomment=[l]{//},',
-            '  morecomment=[s]{/*}{*/},',
-            '  morestring=[b]",',
-            '  morestring=[b]\',',
-            '  morestring=[b]`,',
-            '  keywordstyle=\\color{blue},',
-            '  commentstyle=\\color{darkgreen},',
-            '  stringstyle=\\color{red},',
-            '  basicstyle=\\ttfamily\\small\\keepspaces,',
-            f'  tabsize={self.language_indents["javascript"]},',
-            '}',
-        ])
-        
-        # Vue 定义
-        definitions.extend([
-            '\\lstdefinelanguage{vue}{',
-            '  basicstyle=\\ttfamily,',
-            '  keywords={template,script,style,export,default,props,data,methods,computed,watch,',
-            '            components,mounted,created,updated,destroyed,beforeCreate,beforeMount,',
-            '            beforeUpdate,beforeDestroy},',
-            '  keywordstyle=\\color{blue},',
-            '  sensitive=true,',
-            '  comment=[l]{//},',
-            '  morecomment=[s]{/*}{*/},',
-            '  commentstyle=\\color{darkgreen},',
-            '  stringstyle=\\color{red},',
-            '  morestring=[b]",',
-            '  morestring=[b]\',',
-            f'  tabsize={self.language_indents["vue"]},',
-            '}',
-        ])
-        
-        # MDX 定义
-        definitions.extend([
-            '\\lstdefinelanguage{mdx}{',
-            '  basicstyle=\\ttfamily,',
-            '  keywords={import,export,default,function,return,props,const,let,var,if,else,',
-            '            switch,case,break,continue,for,while,do,try,catch,finally,throw,',
-            '            class,extends,new,delete,typeof,instanceof,void,this,super,with,',
-            '            yield,async,await,static,get,set,of,from,as},',
-            '  keywordstyle=\\color{blue},',
-            '  sensitive=true,',
-            '  comment=[l]{//},',
-            '  morecomment=[s]{/*}{*/},',
-            '  commentstyle=\\color{darkgreen},',
-            '  stringstyle=\\color{red},',
-            '  morestring=[b]",',
-            '  morestring=[b]\',',
-            '  alsoletter={<>,/},',  # 让 JSX 标签被识别为单个token
-            '  morekeywords=[2]{<,</,/>,>},', # JSX 标签作为第二组关键字
-            '  keywordstyle=[2]\\color{purple},',
-            f'  tabsize={self.language_indents["mdx"]},',
-            '}',
-        ])
-        
-        # 添加标题和段落设置
-        definitions.extend([
-            '\\setlength{\\headheight}{15pt}',
-        ])
-        
-        return definitions
-
     def create_pandoc_yaml(self, repo_name: str) -> Path:
         """创建 Pandoc 的 YAML 配置文件"""
         pdf_config = self.config.get('pdf_settings', {})
@@ -736,7 +586,6 @@ class RepoPDFConverter:
                     '\\usepackage{xeCJK}',       # 中文支持
                     '\\usepackage{fvextra}',     # 代码块支持
                     '\\usepackage[most]{tcolorbox}',
-                    '\\usepackage{listings}',
                     '\\usepackage{graphicx}',
                     '\\usepackage{float}',
                     '\\usepackage{sectsty}',   # 节标题格式支持
@@ -777,30 +626,6 @@ class RepoPDFConverter:
                     '\\fvset{breaklines=true, breakanywhere=true, breakafter=\\\\}',
                     # 代码框设置
                     '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
-                    # 设置 listings 包的全局选项
-                    '\\lstset{%',
-                    '  basicstyle=\\ttfamily\\small,',
-                    '  backgroundcolor=\\color{white},',
-                    '  commentstyle=\\color{green!60!black},',
-                    '  keywordstyle=\\color{blue!70!black},',
-                    '  stringstyle=\\color{red!70!black},',
-                    '  numberstyle=\\tiny\\color{gray},',
-                    '  breaklines=true,',
-                    '  breakatwhitespace=true,',
-                    '  keepspaces=true,',
-                    '  showspaces=false,',
-                    '  showstringspaces=false,',
-                    '  showtabs=false,',
-                    '  frame=none,',
-                    '  xleftmargin=0pt,',
-                    '  numbers=none,',
-                    '  inputencoding=utf8,',
-                    '  extendedchars=true,',
-                    '  columns=flexible,',
-                    '  basewidth={0.5em,0.45em},',
-                    '  keepspaces=true,',
-                    '}',
-                    *self.create_language_definitions(),  # 添加所有语言定义
                 ]
             }
         }
