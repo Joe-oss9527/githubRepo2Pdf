@@ -11,7 +11,6 @@ from datetime import datetime
 import markdown
 from bs4 import BeautifulSoup
 import hashlib
-from html2text import HTML2Text
 import re
 
 # 设置 Cairo 库路径
