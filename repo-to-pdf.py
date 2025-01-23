@@ -319,7 +319,7 @@ class RepoPDFConverter:
     def process_markdown(self, content: str) -> str:
         """处理 Markdown 内容，处理图片和 SVG"""
         # 将 title 属性转换为 Pandoc 属性语法
-        content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```{\1 title="\2"}', content)
+        content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```\1', content)
         
         # 先转换为 HTML
         html = self.md.convert(content)
@@ -375,9 +375,12 @@ class RepoPDFConverter:
         # 获取处理后的 HTML
         cleaned_html = str(soup)
         
-        # 将 HTML 转回 Markdown
+        # 将 HTML 转回 Markdown，保留代码块格式
         h2t = HTML2Text()
         h2t.body_width = 0  # 不限制行宽
+        h2t.code_block_style = "fenced"  # 使用 ``` 风格的代码块
+        h2t.ignore_emphasis = False
+        h2t.ignore_links = False
         cleaned_markdown = h2t.handle(cleaned_html)
         
         return cleaned_markdown
@@ -677,13 +680,10 @@ class RepoPDFConverter:
         """创建 Pandoc 的 YAML 配置文件"""
         pdf_config = self.config.get('pdf_settings', {})
         
-        # 获取所有语言定义
-        language_definitions = self.create_language_definitions()
-        
         yaml_config = {
             'pdf-engine': 'xelatex',
             'highlight-style': pdf_config.get('highlight_style', 'tango'),
-            'from': 'markdown+fenced_code_attributes',  # 添加对代码块属性的支持
+            'from': 'markdown+fenced_code_attributes+fenced_code_blocks+backtick_code_blocks',  # 移除 highlighting
             'variables': {
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
@@ -773,7 +773,7 @@ class RepoPDFConverter:
                     '  basewidth={0.5em,0.45em},',
                     '  keepspaces=true,',
                     '}',
-                    *language_definitions,  # 添加所有语言定义
+                    *self.create_language_definitions(),  # 添加所有语言定义
                 ]
             }
         }
@@ -825,9 +825,9 @@ class RepoPDFConverter:
                 '--toc',
                 '--toc-depth=2',
                 '--defaults', str(yaml_path),
+                '--highlight-style=tango',  # 显式指定代码高亮样式
                 '-V', 'geometry:margin=0.5in',
                 '-V', 'fontsize=10pt',
-                '--highlight-style=tango',
                 '--resource-path=' + str(self.temp_dir),
                 '--standalone',
                 # 输出设置
