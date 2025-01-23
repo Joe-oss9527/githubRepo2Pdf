@@ -318,8 +318,8 @@ class RepoPDFConverter:
 
     def process_markdown(self, content: str) -> str:
         """处理 Markdown 内容，处理图片和 SVG"""
-        # 预处理代码块，移除 title 属性
-        content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```\1', content)
+        # 将 title 属性转换为 Pandoc 属性语法
+        content = re.sub(r'```(\w+)\s+title="([^"]+)"', r'```{\1 title="\2"}', content)
         
         # 先转换为 HTML
         html = self.md.convert(content)
@@ -683,6 +683,7 @@ class RepoPDFConverter:
         yaml_config = {
             'pdf-engine': 'xelatex',
             'highlight-style': pdf_config.get('highlight_style', 'tango'),
+            'from': 'markdown+fenced_code_attributes',  # 添加对代码块属性的支持
             'variables': {
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
