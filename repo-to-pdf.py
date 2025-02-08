@@ -501,7 +501,34 @@ class RepoPDFConverter:
             content = match.group(1)
             return '"' + content.replace('\\t', '\\textbackslash{}t') + '"'
             
+        # 处理反斜杠，但保护已经转义的序列
+        def escape_backslashes(text):
+            # 保护已经转义的序列
+            protected = {
+                '\\t': '__TAB__',
+                '\\n': '__NEWLINE__',
+                '\\r': '__RETURN__',
+                '\\\\': '__ESCAPED_BACKSLASH__'
+            }
+            
+            # 先保护已转义的序列
+            for old, new in protected.items():
+                text = text.replace(old, new)
+                
+            # 转义剩余的反斜杠
+            text = text.replace('\\', '\\textbackslash{}')
+            
+            # 恢复被保护的序列
+            for new, old in {v: k for k, v in protected.items()}.items():
+                text = text.replace(new, old)
+                
+            return text
+            
+        # 先处理引号内的特殊字符
         text = re.sub(r'"([^"]*)"', escape_tab_in_quotes, text)
+        
+        # 然后处理所有反斜杠
+        text = escape_backslashes(text)
         
         return text
 
