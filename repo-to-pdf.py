@@ -501,7 +501,37 @@ class RepoPDFConverter:
             content = match.group(1)
             return '"' + content.replace('\\t', '\\textbackslash{}t') + '"'
             
+        # 处理反斜杠，但保护已经转义的序列
+        def escape_backslashes(text):
+            # 保护已经转义的序列
+            protected = {
+                '\\t': '__TAB__',
+                '\\n': '__NEWLINE__',
+                '\\r': '__RETURN__',
+                '\\\\': '__ESCAPED_BACKSLASH__'
+            }
+            
+            # 先保护已转义的序列
+            for old, new in protected.items():
+                text = text.replace(old, new)
+                
+            # 转义剩余的反斜杠
+            text = text.replace('\\', '\\textbackslash{}')
+            
+            # 恢复被保护的序列
+            for new, old in {v: k for k, v in protected.items()}.items():
+                if old == '\\n':
+                    text = text.replace(new, '\n')
+                else:
+                    text = text.replace(new, old)
+            
+            return text
+            
+        # 先处理引号内的特殊字符
         text = re.sub(r'"([^"]*)"', escape_tab_in_quotes, text)
+        
+        # 然后处理所有反斜杠
+        text = escape_backslashes(text)
         
         return text
 
@@ -547,6 +577,15 @@ class RepoPDFConverter:
             # 读取文件内容并清理
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = self._clean_text(f.read().strip())
+            
+            # 如果是 HTML 文件，转换 HTML 为 Markdown（使用 Pandoc 进行转换），以保证数学模式正确处理
+            if ext == '.html':
+                result = subprocess.run(
+                    ["pandoc", "--from=html", "--to=markdown", "--wrap=none"],
+                    input=content, text=True, capture_output=True
+                )
+                markdown_content = result.stdout
+                return f"\n\n# {rel_path}\n\n{markdown_content}\n\n"
             
             # 如果是 Markdown 或 MDX 文件，处理图片路径
             if ext in {'.md', '.mdx'}:
