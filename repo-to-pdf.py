@@ -130,7 +130,7 @@ class RepoPDFConverter:
             '.toml': 'toml',
             '.xml': 'xml',
             '.md': 'markdown',
-            '.mdx': 'mdx'  # 添加 MDX 支持
+            '.mdx': 'mdx',
         }
         
         # 初始化 Markdown 转换器
@@ -542,6 +542,23 @@ class RepoPDFConverter:
         ext = file_path.suffix.lower()
         rel_path = file_path.relative_to(repo_root)
         
+        # 添加对.cursorrules文件的特殊处理
+        if file_path.name == '.cursorrules':
+            # 检查文件大小
+            file_size = file_path.stat().st_size / (1024 * 1024)
+            if file_size > 1:
+                logger.debug(f"跳过大文件 ({file_size:.1f}MB): {file_path}")
+                return ""
+            
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = self._clean_text(f.read().strip())
+                # 简化处理，统一使用markdown格式化
+                return f"\n\n# {rel_path}\n\n`````markdown\n{content}\n`````\n\n"
+            except UnicodeDecodeError:
+                logger.debug(f"跳过无法解码的文件: {file_path}")
+                return ""
+        
         # 检查是否在忽略列表中
         if any(ignore in str(rel_path) for ignore in self.config.get('ignores', [])):
             return ""
@@ -742,7 +759,6 @@ class RepoPDFConverter:
                     '\\AtBeginDocument{\\justifying}',
                     # 添加listings包和创建Shaded环境（而不是重新定义）
                     '\\usepackage{listings}',
-                    '\\newenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
                     # PDF 元数据设置
                     '\\hypersetup{',
                     f'    pdftitle={{{repo_name} 代码文档}},',
@@ -773,7 +789,7 @@ class RepoPDFConverter:
                     # 代码块设置
                     '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
                     '\\fvset{breaklines=true, breakanywhere=true, breakafter=\\\\}',
-                    # 代码框设置
+                    # 代码框设置 - 只保留一个定义
                     '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
                 ]
             }
@@ -812,7 +828,8 @@ class RepoPDFConverter:
                 
                 # 处理所有文件
                 for file_path in sorted(repo_path.rglob('*')):
-                    if file_path.is_file() and not any(part.startswith('.') for part in file_path.parts):
+                    # 允许处理特定的以点开头的文件，如 .cursorrules
+                    if file_path.is_file() and (file_path.name == '.cursorrules' or not any(part.startswith('.') for part in file_path.parts)):
                         content = self.process_file(file_path, repo_path)
                         if content:
                             out_file.write(content)
