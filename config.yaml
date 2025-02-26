@@ -1,7 +1,7 @@
 # 仓库配置
 repository:
-  url: "https://github.com/YYvanYang/go-examples-for-beginners.git"
-  branch: "master"
+  url: "https://github.com/PatrickJS/awesome-cursorrules.git"
+  branch: "main"
 
 # 所有路径都相对于项目根目录
 workspace_dir: "./repo-workspace"
@@ -30,7 +30,7 @@ ignores:
   - "vendor"
   - ".vaunt"
   - ".github"
-  
+
   # 锁定文件
   - "package-lock.json"
   - "yarn.lock"
@@ -48,7 +48,7 @@ ignores:
   - "Pipfile.lock"    # Python pipenv
   - "pdm.lock"        # Python PDM
   - "requirements.txt.lock" # Python pip-tools
-  
+
   # 缓存和临时文件
   - ".git"
   - "__pycache__"
@@ -60,7 +60,7 @@ ignores:
   - ".cache"
   - ".temp"
   - "tmp"
-  
+
   # IDE 和编辑器
   - ".idea"
   - ".vscode"

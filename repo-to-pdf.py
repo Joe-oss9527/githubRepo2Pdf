@@ -740,6 +740,9 @@ class RepoPDFConverter:
                     '\\usepackage{ragged2e}',  # 段落对齐支持
                     # 段落对齐设置
                     '\\AtBeginDocument{\\justifying}',
+                    # 添加listings包和创建Shaded环境（而不是重新定义）
+                    '\\usepackage{listings}',
+                    '\\newenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
                     # PDF 元数据设置
                     '\\hypersetup{',
                     f'    pdftitle={{{repo_name} 代码文档}},',
