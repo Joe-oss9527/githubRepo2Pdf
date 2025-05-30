@@ -493,46 +493,9 @@ class RepoPDFConverter:
         return content
 
     def _clean_text(self, text: str) -> str:
-        """清理文本内容，只处理特殊字符，保持原始格式"""
-        import re
-        
-        # 处理引号内的 \t，将其转义为 LaTeX 可识别的形式
-        def escape_tab_in_quotes(match):
-            content = match.group(1)
-            return '"' + content.replace('\\t', '\\textbackslash{}t') + '"'
-            
-        # 处理反斜杠，但保护已经转义的序列
-        def escape_backslashes(text):
-            # 保护已经转义的序列
-            protected = {
-                '\\t': '__TAB__',
-                '\\n': '__NEWLINE__',
-                '\\r': '__RETURN__',
-                '\\\\': '__ESCAPED_BACKSLASH__'
-            }
-            
-            # 先保护已转义的序列
-            for old, new in protected.items():
-                text = text.replace(old, new)
-                
-            # 转义剩余的反斜杠
-            text = text.replace('\\', '\\textbackslash{}')
-            
-            # 恢复被保护的序列
-            for new, old in {v: k for k, v in protected.items()}.items():
-                if old == '\\n':
-                    text = text.replace(new, '\n')
-                else:
-                    text = text.replace(new, old)
-            
-            return text
-            
-        # 先处理引号内的特殊字符
-        text = re.sub(r'"([^"]*)"', escape_tab_in_quotes, text)
-        
-        # 然后处理所有反斜杠
-        text = escape_backslashes(text)
-        
+        """清理文本内容，保持原始格式"""
+        # 方案3：移除反斜杠转义，让 Pandoc 和 LaTeX 自己处理
+        # 只返回原始文本，不进行任何转义处理
         return text
 
     def process_file(self, file_path: Path, repo_root: Path) -> str:
