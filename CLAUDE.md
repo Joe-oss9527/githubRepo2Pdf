@@ -70,7 +70,7 @@ make test-coverage
    - `get_system_fonts()`: Cross-platform font detection
    - `generate_directory_tree()`: Visual project structure generation
    - `generate_code_stats()`: Code statistics and language analysis
-   - Smart file filtering and size management (1MB default limit)
+   - Smart file filtering and size management (0.5MB default limit)
    - SVG to PNG conversion using CairoSVG
    - Remote image downloading and embedding
    - Syntax highlighting for 30+ programming languages
@@ -111,8 +111,10 @@ make test-coverage
 - **Image Handling**: Automatic SVG to PNG conversion, remote image downloading with caching
 - **Text Processing**: Smart handling of Chinese text, LaTeX special character escaping
 - **File Management**: Respects .gitignore, applies extensive default ignore patterns
-- **Performance**: Shallow git clones, 1MB file size limit, efficient directory traversal
+- **Performance**: Shallow git clones, 0.5MB file size limit, efficient directory traversal
 - **Logging**: Three-tier logging system (normal, verbose, quiet) controlled via make parameters
+- **YAML Handling**: Custom YAML dumper class for proper backslash escaping, separate header.tex file approach
+- **Markdown Processing**: Escapes "---" lines to prevent YAML delimiter confusion, removes yaml_metadata_block from pandoc format
 
 ## Important Paths
 
@@ -168,9 +170,18 @@ Modify `pdf_settings` in config.yaml:
 2. Check `debug.md` for the generated markdown
 3. Review `temp_conversion_files/` for intermediate files
 4. Common issues:
-   - Missing fonts: Install specified fonts or update config.yaml
+   - **Missing fonts**: Install specified fonts or update config.yaml
+     - macOS defaults: "Songti SC" (main), "SF Mono" (mono)
+     - Linux/WSL defaults: "Noto Serif CJK SC" (main), "DejaVu Sans Mono" (mono)
+     - The tool automatically detects the OS and suggests appropriate fonts
    - LaTeX errors: Check for special characters in code
    - Memory issues: Reduce file size limit or add more ignore patterns
+   - **YAML parsing errors with pandoc**: When pandoc fails with YAML parse exceptions, the issue is often related to how pandoc defaults files handle LaTeX commands. Solutions implemented:
+     - Moved from inline `header-includes` in YAML to separate `header.tex` file using `include-in-header`
+     - Created custom YAML dumper class to properly quote strings containing backslashes
+     - Removed `yaml_metadata_block` from pandoc input format to avoid parsing conflicts
+     - Escape "---" lines in markdown files to prevent them being interpreted as YAML delimiters
+     - Use file paths instead of inline content for LaTeX headers in pandoc defaults
    - **"Dimension too large" error**: This LaTeX error occurs when processing files with extremely long lines or large code blocks. Solutions implemented:
      - File size limit reduced from 1MB to 0.5MB for non-image files
      - Added `_process_long_lines()` method to break lines longer than 80 characters
