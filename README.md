@@ -16,7 +16,7 @@
 - 错误恢复机制
 - 自定义模板系统
 - 完整的单元测试和集成测试
-- 80%+ 测试覆盖率
+- 55%+ 测试覆盖率（持续改进中）
 
 ## 系统要求
 
@@ -40,7 +40,8 @@ xcode-select --install
 ```bash
 sudo apt-get update
 sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-fonts-extra \
-                     python3-venv python3-pip cairo-dev inkscape
+                     texlive-lang-chinese texlive-lang-greek python3-venv python3-pip \
+                     cairo-dev inkscape
 ```
 
 ## 使用方法
@@ -152,7 +153,7 @@ make test-coverage
 
 - 单元测试覆盖核心功能模块
 - 集成测试验证完整转换流程
-- 测试覆盖率目标：80%+
+- 测试覆盖率要求：50%+（当前：55%）
 - 支持 CI/CD 自动化测试
 
 ## 日志级别控制
@@ -190,9 +191,10 @@ output_dir: "./repo-pdfs"         # PDF 输出目录
 # PDF 设置
 pdf_settings:
   margin: "margin=1in"           # 页边距
-  main_font: "Songti SC"         # 主字体
-  mono_font: "SF Mono"           # 等宽字体（代码）
+  main_font: "Songti SC"         # 主字体（macOS）/ "Noto Serif CJK SC"（Linux）
+  mono_font: "SF Mono"           # 等宽字体（macOS）/ "DejaVu Sans Mono"（Linux）
   highlight_style: "monochrome"  # 代码高亮主题
+  split_large_files: true        # 将大文件分割成多个部分而不是截断
 
 # 忽略的文件或目录
 ignores:
@@ -211,12 +213,13 @@ ignores:
 
 ## 注意事项
 
-1. 默认跳过大于 1MB 的文件
-2. 自动处理长行和大型代码块
-3. 自动跳过二进制文件
-4. SVG 文件会自动转换为 PNG
-5. 支持中文文件名和内容
-6. 日志输出可通过参数控制详细程度
+1. 默认跳过大于 0.5MB 的文件（图片除外）
+2. 自动处理长行（超过 80 字符）和大型代码块
+3. 大文件（超过 1000 行）会自动分割成多个部分
+4. 自动跳过二进制文件
+5. SVG 文件会自动转换为 PNG
+6. 支持中文文件名和内容
+7. 日志输出可通过参数控制详细程度
 
 ## 常见问题
 
@@ -228,14 +231,20 @@ ignores:
 
 2. **中文显示异常**
    - 确认系统安装了配置文件中指定的字体
-   - 尝试修改配置文件中的字体设置
+   - macOS 默认使用 "Songti SC"，Linux 默认使用 "Noto Serif CJK SC"
+   - 工具会自动检测系统并选择合适的字体
 
-3. **内存不足**
-   - 增加被忽略的文件类型
-   - 减小文件大小限制
-   - 使用更简单的代码高亮主题
+3. **LaTeX 错误**
+   - "Dimension too large" 错误：文件已自动分割处理
+   - "puenc-greek.def not found" 错误：需要安装 texlive-lang-greek 包
+   - 特殊字符错误：已通过禁用 raw_tex 扩展解决
 
-4. **SVG 转换失败**
+4. **内存不足**
+   - 文件大小限制已优化为 0.5MB
+   - 大文件会自动分割而不是截断
+   - 使用流式处理避免内存溢出
+
+5. **SVG 转换失败**
    - 确保已安装 Cairo 和 Inkscape
    - 检查 SVG 文件格式是否正确
    - 使用 `make debug` 查看详细的转换日志
