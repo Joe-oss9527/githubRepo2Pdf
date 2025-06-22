@@ -822,9 +822,9 @@ class RepoPDFConverter:
             
             # 添加部分标题
             result.append(f"\n## {rel_path} - 第 {i+1}/{num_parts} 部分 (行 {start+1}-{end})")
-            result.append(f"\n`````{lang}")
+            result.append(f"\n`````{lang}\n")
             result.append(part_content)
-            result.append("`````\n")
+            result.append("\n`````\n")
         
         return ''.join(result)
     

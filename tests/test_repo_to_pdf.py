@@ -439,6 +439,12 @@ class TestFileProcessing(unittest.TestCase):
         self.assertIn("line 799", result)
         self.assertIn("line 800", result)
         self.assertIn("line 1999", result)
+        
+        # Verify proper code block formatting with newlines
+        self.assertIn("\n`````python\n", result)
+        self.assertIn("\n`````\n", result)
+        # Ensure code blocks are properly opened and closed
+        self.assertEqual(result.count("`````"), 6)  # 3 open + 3 close
 
 
 class TestLaTeXGeneration(unittest.TestCase):
