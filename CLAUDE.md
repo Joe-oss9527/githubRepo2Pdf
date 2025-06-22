@@ -77,6 +77,8 @@ make test-coverage
    - Progress bar integration with tqdm
    - Stream processing to avoid memory issues
    - `_process_large_file()`: Intelligent file splitting for files over 1000 lines
+     - Splits into 800-line chunks with proper code block formatting
+     - Preserves syntax highlighting by ensuring newlines around code markers
    - `_process_long_lines()`: Line breaking for lines over 80 characters
    - `_break_long_strings()`: Smart string breaking for long literals
 
@@ -212,3 +214,7 @@ Modify `pdf_settings` in config.yaml:
      - Intelligent file splitting: Files with more than 1000 lines are split into multiple parts (800 lines each) instead of truncation
      - Added `\maxdeadcycles=200` and `\emergencystretch=5em` to handle large content
      - Each part is clearly labeled with line numbers for easy reference
+   - **Code block formatting in split files**: When large files are split into parts, ensure proper syntax highlighting:
+     - Code blocks must have newlines after the opening marker: `` `````python\n``
+     - Code blocks must have newlines before the closing marker: ``\n````` ``
+     - This ensures pandoc correctly applies syntax highlighting to each part
