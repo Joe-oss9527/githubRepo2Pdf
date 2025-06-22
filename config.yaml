@@ -13,6 +13,7 @@ pdf_settings:
   main_font: "Noto Serif CJK SC"
   mono_font: "DejaVu Sans Mono"
   highlight_style: "monochrome"
+  split_large_files: true  # 将大文件分割成多个部分而不是截断
   metadata:
     author: "Repo-to-PDF Generator"
     creator: "LaTeX"

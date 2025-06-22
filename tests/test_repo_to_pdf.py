@@ -410,16 +410,35 @@ class TestFileProcessing(unittest.TestCase):
         self.assertEqual(line, result)  # Should remain unchanged
     
     def test_file_truncation(self):
-        """Test file truncation for very large files"""
+        """Test file splitting for very large files"""
         test_file = Path(self.test_dir) / "huge.py"
         # Create a file with more than 1000 lines
         content = "\n".join([f"print('Line {i}')" for i in range(1500)])
         test_file.write_text(content)
         
         result = self.converter.process_file(test_file, Path(self.test_dir))
-        self.assertIn("... (文件太大，已截断)", result)  # Should contain truncation message
-        lines = result.count("\n")
-        self.assertLess(lines, 1100)  # Should have fewer lines than original
+        self.assertIn("注意：此文件包含 1500 行", result)  # Should contain notice
+        self.assertIn("已分为", result)  # Should mention parts
+        self.assertIn("第 1/2 部分", result)  # Should have first part
+        self.assertIn("第 2/2 部分", result)  # Should have second part
+    
+    def test_process_large_file_method(self):
+        """Test the _process_large_file method directly"""
+        lines = [f"line {i}" for i in range(2000)]
+        result = self.converter._process_large_file("test/large.py", lines, "python")
+        
+        # Check structure
+        self.assertIn("注意：此文件包含 2000 行", result)
+        self.assertIn("已分为 3 个部分", result)  # 2000/800 = 2.5, so 3 parts
+        self.assertIn("第 1/3 部分 (行 1-800)", result)
+        self.assertIn("第 2/3 部分 (行 801-1600)", result)
+        self.assertIn("第 3/3 部分 (行 1601-2000)", result)
+        
+        # Check content preservation
+        self.assertIn("line 0", result)
+        self.assertIn("line 799", result)
+        self.assertIn("line 800", result)
+        self.assertIn("line 1999", result)
 
 
 class TestLaTeXGeneration(unittest.TestCase):

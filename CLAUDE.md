@@ -186,9 +186,13 @@ Modify `pdf_settings` in config.yaml:
      - Removed `yaml_metadata_block` from pandoc input format to avoid parsing conflicts
      - Escape "---" lines in markdown files to prevent them being interpreted as YAML delimiters
      - Use file paths instead of inline content for LaTeX headers in pandoc defaults
+   - **"Undefined control sequence" errors**: When LaTeX encounters backslashes in code, it may interpret them as commands. Solution:
+     - Disabled `raw_tex` extension in pandoc input format (`-raw_tex`) to prevent backslashes being interpreted as LaTeX commands
+     - This ensures code blocks are properly handled without manual escaping
    - **"Dimension too large" error**: This LaTeX error occurs when processing files with extremely long lines or large code blocks. Solutions implemented:
      - File size limit reduced from 1MB to 0.5MB for non-image files
      - Added `_process_long_lines()` method to break lines longer than 80 characters
      - Enhanced LaTeX header with `\small` font size and `etoolbox` patches
-     - Automatic truncation of files with more than 1000 lines
+     - Intelligent file splitting: Files with more than 1000 lines are split into multiple parts (800 lines each) instead of truncation
      - Added `\maxdeadcycles=200` and `\emergencystretch=5em` to handle large content
+     - Each part is clearly labeled with line numbers for easy reference

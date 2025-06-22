@@ -594,8 +594,8 @@ class RepoPDFConverter:
 
     def _clean_text(self, text: str) -> str:
         """清理文本内容，保持原始格式"""
-        # 方案3：移除反斜杠转义，让 Pandoc 和 LaTeX 自己处理
-        # 只返回原始文本，不进行任何转义处理
+        # 禁用 raw_tex 后，不需要转义反斜杠
+        # pandoc 会正确处理代码块中的特殊字符
         return text
 
     def process_file(self, file_path: Path, repo_root: Path) -> str:
@@ -739,10 +739,17 @@ class RepoPDFConverter:
                 lang = self.code_extensions[ext]
                 # 处理长字符串，将它们分割成多行
                 content = self._process_long_lines(content)
-                # 如果内容仍然过大，截断
+                
+                # 如果内容过大，分割成多个部分
                 lines = content.splitlines()
                 if len(lines) > 1000:
-                    content = '\n'.join(lines[:1000]) + '\n\n... (文件太大，已截断)'
+                    # 检查配置是否启用了智能分割
+                    if self.config.get('pdf_settings', {}).get('split_large_files', True):
+                        return self._process_large_file(rel_path, lines, lang)
+                    else:
+                        # 使用传统的截断方式
+                        content = '\n'.join(lines[:1000]) + '\n\n... (文件太大，已截断)'
+                
                 return f"\n\n# {rel_path}\n\n`````{lang}\n{content}\n`````\n\n"
                 
             return ""
@@ -795,6 +802,31 @@ class RepoPDFConverter:
             return match.group(0)
             
         return re.sub(pattern, replacer, line)
+    
+    def _process_large_file(self, rel_path: str, lines: list, lang: str) -> str:
+        """处理大文件，将其分割成多个部分"""
+        result = []
+        total_lines = len(lines)
+        chunk_size = 800  # 每个部分的行数
+        num_parts = (total_lines + chunk_size - 1) // chunk_size
+        
+        # 添加文件说明
+        result.append(f"\n\n# {rel_path}")
+        result.append(f"\n> 注意：此文件包含 {total_lines} 行，已分为 {num_parts} 个部分显示\n")
+        
+        # 分割文件内容
+        for i in range(num_parts):
+            start = i * chunk_size
+            end = min((i + 1) * chunk_size, total_lines)
+            part_content = '\n'.join(lines[start:end])
+            
+            # 添加部分标题
+            result.append(f"\n## {rel_path} - 第 {i+1}/{num_parts} 部分 (行 {start+1}-{end})")
+            result.append(f"\n`````{lang}")
+            result.append(part_content)
+            result.append("`````\n")
+        
+        return ''.join(result)
     
     def generate_directory_tree(self, repo_path: Path, max_depth: int = 3) -> str:
         """生成项目的目录树结构"""
@@ -1236,7 +1268,18 @@ variables:
 % 代码高亮
 \\usepackage{{fvextra}}
 \\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}, fontsize=\\small}}
-\\fvset{{breaklines=true, breakanywhere=true, fontsize=\\small}}
+\\fvset{{breaklines=true, breakanywhere=true, fontsize=\\small, tabsize=2}}
+
+% 使用 listings 包处理特殊字符
+\\usepackage{{listings}}
+\\lstset{{
+  basicstyle=\\ttfamily\\small,
+  breaklines=true,
+  breakatwhitespace=false,
+  keepspaces=true,
+  showstringspaces=false,
+  literate={{\\\\}}{{\\textbackslash}}1
+}}
 
 % 防止 Dimension too large 错误
 \\maxdeadcycles=200
@@ -1271,7 +1314,7 @@ variables:
             # 调用 pandoc 进行转换，添加更多选项
             cmd = [
                 'pandoc',
-                '-f', 'markdown+pipe_tables+grid_tables+table_captions+smart+fenced_code_blocks+fenced_code_attributes+backtick_code_blocks+inline_code_attributes+line_blocks+fancy_lists+definition_lists+example_lists+task_lists+citations+footnotes+smart+superscript+subscript+raw_html+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash+raw_tex+implicit_figures+link_attributes+bracketed_spans+native_divs+native_spans+raw_attribute+header_attributes+auto_identifiers+autolink_bare_uris+emoji+hard_line_breaks+escaped_line_breaks+blank_before_blockquote+blank_before_header+space_in_atx_header+strikeout+east_asian_line_breaks',  # 移除 yaml_metadata_block 避免解析错误
+                '-f', 'markdown+pipe_tables+grid_tables+table_captions+smart+fenced_code_blocks+fenced_code_attributes+backtick_code_blocks+inline_code_attributes+line_blocks+fancy_lists+definition_lists+example_lists+task_lists+citations+footnotes+smart+superscript+subscript+raw_html+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash-raw_tex+implicit_figures+link_attributes+bracketed_spans+native_divs+native_spans+raw_attribute+header_attributes+auto_identifiers+autolink_bare_uris+emoji+hard_line_breaks+escaped_line_breaks+blank_before_blockquote+blank_before_header+space_in_atx_header+strikeout+east_asian_line_breaks',  # 禁用 raw_tex 避免反斜杠被解释为 LaTeX 命令
                 '--pdf-engine=xelatex',
                 '--wrap=none',
                 '--toc',

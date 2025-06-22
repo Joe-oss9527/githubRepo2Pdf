@@ -5980,9 +5980,10 @@ export default function TerminalChatInputThinking({
 
 
 # codex-cli/src/components/chat/terminal-chat-input.tsx
+> 注意：此文件包含 1018 行，已分为 2 个部分显示
 
-`````typescript
-import type { MultilineTextEditorHandle } from "./multiline-editor";
+## codex-cli/src/components/chat/terminal-chat-input.tsx - 第 1/2 部分 (行 1-800)
+`````typescriptimport type { MultilineTextEditorHandle } from "./multiline-editor";
 import type { ReviewDecision } from "../../utils/agent/review.js";
 import type { FileSystemSuggestion } from "../../utils/file-system-suggestions.js";
 import type { HistoryEntry } from "../../utils/storage/command-history.js";
@@ -6781,8 +6782,10 @@ export default function TerminalChatInput({
                 if (wasReplaced && suggestion?.isDirectory) {
                   applyFsSuggestion(replacedText);
                   // Update suggestions for the new directory
-                  updateFsSuggestions(replacedText, true);
-                  return;
+                  updateFsSuggestions(replacedText, true);`````
+
+## codex-cli/src/components/chat/terminal-chat-input.tsx - 第 2/2 部分 (行 801-1018)
+`````typescript                  return;
                 }
 
                 onSubmit(replacedText);
@@ -6982,10 +6985,24 @@ function TerminalChatInputThinking({
       >
         <Box gap={2}>
           <Text>{frameWithSeconds}</Text>
-
-... (文件太大，已截断)
-`````
-
+          <Text>
+            Thinking
+            {dots}
+          </Text>
+        </Box>
+        <Text>
+          <Text dimColor>press</Text> <Text bold>Esc</Text>{" "}
+          {awaitingConfirm ? (
+            <Text bold>again</Text>
+          ) : (
+            <Text dimColor>twice</Text>
+          )}{" "}
+          <Text dimColor>to interrupt</Text>
+        </Text>
+      </Box>
+    </Box>
+  );
+}`````
 
 
 # codex-cli/src/components/chat/terminal-chat-past-rollout.tsx
@@ -11880,9 +11897,10 @@ declare module "diff" {
 
 
 # codex-cli/src/utils/agent/agent-loop.ts
+> 注意：此文件包含 1678 行，已分为 3 个部分显示
 
-`````typescript
-import type { ReviewDecision } from "./review.js";
+## codex-cli/src/utils/agent/agent-loop.ts - 第 1/3 部分 (行 1-800)
+`````typescriptimport type { ReviewDecision } from "./review.js";
 import type { ApplyPatchCommand, ApprovalPolicy } from "../../approvals.js";
 import type { AppConfig } from "../config.js";
 import type { ResponseEvent } from "../responses.js";
@@ -12681,8 +12699,10 @@ export class AgentLoop {
             ]
               .filter(Boolean)
               .join("\n");
+`````
 
-            const responseCall =
+## codex-cli/src/utils/agent/agent-loop.ts - 第 2/3 部分 (行 801-1600)
+`````typescript            const responseCall =
               !this.config.provider ||
               this.config.provider?.toLowerCase() === "openai"
                 ? (params: ResponseCreateParams) =>
@@ -12882,10 +12902,686 @@ export class AgentLoop {
               });
               this.onLoading(false);
               return;
+            }
+            throw error;
+          }
+        }
 
-... (文件太大，已截断)
+        // If the user requested cancellation while we were awaiting the network
+        // request, abort immediately before we start handling the stream.
+        if (this.canceled || this.hardAbort.signal.aborted) {
+          // `stream` is defined; abort to avoid wasting tokens/server work
+          try {
+            (
+              stream as { controller?: { abort?: () => void } }
+            )?.controller?.abort?.();
+          } catch {
+            /* ignore */
+          }
+          this.onLoading(false);
+          return;
+        }
+
+        // Keep track of the active stream so it can be aborted on demand.
+        this.currentStream = stream;
+
+        // Guard against an undefined stream before iterating.
+        if (!stream) {
+          this.onLoading(false);
+          log("AgentLoop.run(): stream is undefined");
+          return;
+        }
+
+        const MAX_STREAM_RETRIES = 5;
+        let streamRetryAttempt = 0;
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          try {
+            let newTurnInput: Array<ResponseInputItem> = [];
+
+            // eslint-disable-next-line no-await-in-loop
+            for await (const event of stream as AsyncIterable<ResponseEvent>) {
+              log(`AgentLoop.run(): response event ${event.type}`);
+
+              // process and surface each item (no-op until we can depend on streaming events)
+              if (event.type === "response.output_item.done") {
+                const item = event.item;
+                // 1) if it's a reasoning item, annotate it
+                type ReasoningItem = { type?: string; duration_ms?: number };
+                const maybeReasoning = item as ReasoningItem;
+                if (maybeReasoning.type === "reasoning") {
+                  maybeReasoning.duration_ms = Date.now() - thinkingStart;
+                }
+                if (
+                  item.type === "function_call" ||
+                  item.type === "local_shell_call"
+                ) {
+                  // Track outstanding tool call so we can abort later if needed.
+                  // The item comes from the streaming response, therefore it has
+                  // either `id` (chat) or `call_id` (responses) – we normalise
+                  // by reading both.
+                  const callId =
+                    (item as { call_id?: string; id?: string }).call_id ??
+                    (item as { id?: string }).id;
+                  if (callId) {
+                    this.pendingAborts.add(callId);
+                  }
+                } else {
+                  stageItem(item as ResponseItem);
+                }
+              }
+
+              if (event.type === "response.completed") {
+                if (thisGeneration === this.generation && !this.canceled) {
+                  for (const item of event.response.output) {
+                    stageItem(item as ResponseItem);
+                  }
+                }
+                if (
+                  event.response.status === "completed" ||
+                  (event.response.status as unknown as string) ===
+                    "requires_action"
+                ) {
+                  // TODO: remove this once we can depend on streaming events
+                  newTurnInput = await this.processEventsWithoutStreaming(
+                    event.response.output,
+                    stageItem,
+                  );
+
+                  // When we do not use server‑side storage we maintain our
+                  // own transcript so that *future* turns still contain full
+                  // conversational context. However, whether we advance to
+                  // another loop iteration should depend solely on the
+                  // presence of *new* input items (i.e. items that were not
+                  // part of the previous request). Re‑sending the transcript
+                  // by itself would create an infinite request loop because
+                  // `turnInput.length` would never reach zero.
+
+                  if (this.disableResponseStorage) {
+                    // 1) Append the freshly emitted output to our local
+                    //    transcript (minus non‑message items the model does
+                    //    not need to see again).
+                    const cleaned = filterToApiMessages(
+                      event.response.output.map(stripInternalFields),
+                    );
+                    this.transcript.push(...cleaned);
+
+                    // 2) Determine the *delta* (newTurnInput) that must be
+                    //    sent in the next iteration. If there is none we can
+                    //    safely terminate the loop – the transcript alone
+                    //    does not constitute new information for the
+                    //    assistant to act upon.
+
+                    const delta = filterToApiMessages(
+                      newTurnInput.map(stripInternalFields),
+                    );
+
+                    if (delta.length === 0) {
+                      // No new input => end conversation.
+                      newTurnInput = [];
+                    } else {
+                      // Re‑send full transcript *plus* the new delta so the
+                      // stateless backend receives complete context.
+                      newTurnInput = [...this.transcript, ...delta];
+                      // The prefix ends at the current transcript length –
+                      // everything after this index is new for the next
+                      // iteration.
+                      transcriptPrefixLen = this.transcript.length;
+                    }
+                  }
+                }
+                lastResponseId = event.response.id;
+                this.onLastResponseId(event.response.id);
+              }
+            }
+
+            // Set after we have consumed all stream events in case the stream wasn't
+            // complete or we missed events for whatever reason. That way, we will set
+            // the next turn to an empty array to prevent an infinite loop.
+            // And don't update the turn input too early otherwise we won't have the
+            // current turn inputs available for retries.
+            turnInput = newTurnInput;
+
+            // Stream finished successfully – leave the retry loop.
+            break;
+          } catch (err: unknown) {
+            const isRateLimitError = (e: unknown): boolean => {
+              if (!e || typeof e !== "object") {
+                return false;
+              }
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const ex: any = e;
+              return (
+                ex.status === 429 ||
+                ex.code === "rate_limit_exceeded" ||
+                ex.type === "rate_limit_exceeded"
+              );
+            };
+
+            if (
+              isRateLimitError(err) &&
+              streamRetryAttempt < MAX_STREAM_RETRIES
+            ) {
+              streamRetryAttempt += 1;
+
+              const waitMs =
+                RATE_LIMIT_RETRY_WAIT_MS * 2 ** (streamRetryAttempt - 1);
+              log(
+                `OpenAI stream rate‑limited – retry ${streamRetryAttempt}/${MAX_STREAM_RETRIES} in ${waitMs} ms`,
+              );
+
+              // Give the server a breather before retrying.
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((res) => setTimeout(res, waitMs));
+
+              // Re‑create the stream with the *same* parameters.
+              let reasoning: Reasoning | undefined;
+              if (this.model.startsWith("o")) {
+                reasoning = { effort: "high" };
+                if (
+                  this.model === "o3" ||
+                  this.model === "o4-mini" ||
+                  this.model === "codex-mini-latest"
+                ) {
+                  reasoning.summary = "auto";
+                }
+              }
+
+              const mergedInstructions = [prefix, this.instructions]
+                .filter(Boolean)
+                .join("\n");
+
+              const responseCall =
+                !this.config.provider ||
+                this.config.provider?.toLowerCase() === "openai"
+                  ? (params: ResponseCreateParams) =>
+                      this.oai.responses.create(params)
+                  : (params: ResponseCreateParams) =>
+                      responsesCreateViaChatCompletions(
+                        this.oai,
+                        params as ResponseCreateParams & { stream: true },
+                      );
+
+              log(
+                "agentLoop.run(): responseCall(1): turnInput: " +
+                  JSON.stringify(turnInput),
+              );
+              // eslint-disable-next-line no-await-in-loop
+              stream = await responseCall({
+                model: this.model,
+                instructions: mergedInstructions,
+                input: turnInput,
+                stream: true,
+                parallel_tool_calls: false,
+                reasoning,
+                ...(this.config.flexMode ? { service_tier: "flex" } : {}),
+                ...(this.disableResponseStorage
+                  ? { store: false }
+                  : {
+                      store: true,
+                      previous_response_id: lastResponseId || undefined,
+                    }),
+                tools: tools,
+                tool_choice: "auto",
+              });
+
+              this.currentStream = stream;
+              // Continue to outer while to consume new stream.
+              continue;
+            }
+
+            // Gracefully handle an abort triggered via `cancel()` so that the
+            // consumer does not see an unhandled exception.
+            if (err instanceof Error && err.name === "AbortError") {
+              if (!this.canceled) {
+                // It was aborted for some other reason; surface the error.
+                throw err;
+              }
+              this.onLoading(false);
+              return;
+            }
+            // Suppress internal stack on JSON parse failures
+            if (err instanceof SyntaxError) {
+              this.onItem({
+                id: `error-${Date.now()}`,
+                type: "message",
+                role: "system",
+                content: [
+                  {
+                    type: "input_text",
+                    text: "⚠️ Failed to parse streaming response (invalid JSON). Please `/clear` to reset.",
+                  },
+                ],
+              });
+              this.onLoading(false);
+              return;
+            }
+            // Handle OpenAI API quota errors
+            if (
+              err instanceof Error &&
+              (err as { code?: string }).code === "insufficient_quota"
+            ) {
+              this.onItem({
+                id: `error-${Date.now()}`,
+                type: "message",
+                role: "system",
+                content: [
+                  {
+                    type: "input_text",
+                    text: `\u26a0 Insufficient quota: ${err instanceof Error && err.message ? err.message.trim() : "No remaining quota."} Manage or purchase credits at https://platform.openai.com/account/billing.`,
+                  },
+                ],
+              });
+              this.onLoading(false);
+              return;
+            }
+            throw err;
+          } finally {
+            this.currentStream = null;
+          }
+        } // end while retry loop
+
+        log(
+          `Turn inputs (${turnInput.length}) - ${turnInput
+            .map((i) => i.type)
+            .join(", ")}`,
+        );
+      }
+
+      // Flush staged items if the run concluded successfully (i.e. the user did
+      // not invoke cancel() or terminate() during the turn).
+      const flush = () => {
+        if (
+          !this.canceled &&
+          !this.hardAbort.signal.aborted &&
+          thisGeneration === this.generation
+        ) {
+          // Only emit items that weren't already delivered above
+          for (const item of staged) {
+            if (item) {
+              this.onItem(item);
+            }
+          }
+        }
+
+        // At this point the turn finished without the user invoking
+        // `cancel()`.  Any outstanding function‑calls must therefore have been
+        // satisfied, so we can safely clear the set that tracks pending aborts
+        // to avoid emitting duplicate synthetic outputs in subsequent runs.
+        this.pendingAborts.clear();
+        // Now emit system messages recording the per‑turn *and* cumulative
+        // thinking times so UIs and tests can surface/verify them.
+        // const thinkingEnd = Date.now();
+
+        // 1) Per‑turn measurement – exact time spent between request and
+        //    response for *this* command.
+        // this.onItem({
+        //   id: `thinking-${thinkingEnd}`,
+        //   type: "message",
+        //   role: "system",
+        //   content: [
+        //     {
+        //       type: "input_text",
+        //       text: `🤔  Thinking time: ${Math.round(
+        //         (thinkingEnd - thinkingStart) / 1000
+        //       )} s`,
+        //     },
+        //   ],
+        // });
+
+        // 2) Session‑wide cumulative counter so users can track overall wait
+        //    time across multiple turns.
+        // this.cumulativeThinkingMs += thinkingEnd - thinkingStart;
+        // this.onItem({
+        //   id: `thinking-total-${thinkingEnd}`,
+        //   type: "message",
+        //   role: "system",
+        //   content: [
+        //     {
+        //       type: "input_text",
+        //       text: `⏱  Total thinking time: ${Math.round(
+        //         this.cumulativeThinkingMs / 1000
+        //       )} s`,
+        //     },
+        //   ],
+        // });
+
+        this.onLoading(false);
+      };
+
+      // Use a small delay to make sure UI rendering is smooth. Double-check
+      // cancellation state right before flushing to avoid race conditions.
+      setTimeout(() => {
+        if (
+          !this.canceled &&
+          !this.hardAbort.signal.aborted &&
+          thisGeneration === this.generation
+        ) {
+          flush();
+        }
+      }, 3);
+
+      // End of main logic. The corresponding catch block for the wrapper at the
+      // start of this method follows next.
+    } catch (err) {
+      // Handle known transient network/streaming issues so they do not crash the
+      // CLI. We currently match Node/undici's `ERR_STREAM_PREMATURE_CLOSE`
+      // error which manifests when the HTTP/2 stream terminates unexpectedly
+      // (e.g. during brief network hiccups).
+
+      const isPrematureClose =
+        err instanceof Error &&
+        // eslint-disable-next-line
+        ((err as any).code === "ERR_STREAM_PREMATURE_CLOSE" ||
+          err.message?.includes("Premature close"));
+
+      if (isPrematureClose) {
+        try {
+          this.onItem({
+            id: `error-${Date.now()}`,
+            type: "message",
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text: "⚠️  Connection closed prematurely while waiting for the model. Please try again.",
+              },
+            ],
+          });
+        } catch {
+          /* no-op – emitting the error message is best‑effort */
+        }
+        this.onLoading(false);
+        return;
+      }
+
+      // -------------------------------------------------------------------
+      // Catch‑all handling for other network or server‑side issues so that
+      // transient failures do not crash the CLI. We intentionally keep the
+      // detection logic conservative to avoid masking programming errors. A
+      // failure is treated as retry‑worthy/user‑visible when any of the
+      // following apply:
+      //   • the error carries a recognised Node.js network errno ‑ style code
+      //     (e.g. ECONNRESET, ETIMEDOUT …)
+      //   • the OpenAI SDK attached an HTTP `status` >= 500 indicating a
+      //     server‑side problem.
+      //   • the error is model specific and detected in stream.
+      // If matched we emit a single system message to inform the user and
+      // resolve gracefully so callers can choose to retry.
+      // -------------------------------------------------------------------
+
+      const NETWORK_ERRNOS = new Set([
+        "ECONNRESET",
+        "ECONNREFUSED",
+        "EPIPE",
+        "ENOTFOUND",
+        "ETIMEDOUT",
+        "EAI_AGAIN",
+      ]);
+
+      const isNetworkOrServerError = (() => {
+        if (!err || typeof err !== "object") {
+          return false;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e: any = err;
+
+        // Direct instance check for connection errors thrown by the OpenAI SDK.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ApiConnErrCtor = (OpenAI as any).APIConnectionError as  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          | (new (...args: any) => Error)
+          | undefined;
+        if (ApiConnErrCtor && e instanceof ApiConnErrCtor) {
+          return true;
+        }
+
+        if (typeof e.code === "string" && NETWORK_ERRNOS.has(e.code)) {
+          return true;
+        }
+
+        // When the OpenAI SDK nests the underlying network failure inside the
+        // `cause` property we surface it as well so callers do not see an
+        // unhandled exception for errors like ENOTFOUND, ECONNRESET …
+        if (
+          e.cause &&
+          typeof e.cause === "object" &&
+          NETWORK_ERRNOS.has((e.cause as { code?: string }).code ?? "")
+        ) {
+          return true;
+        }
+
+        if (typeof e.status === "number" && e.status >= 500) {
+          return true;
+        }
+
+        // Fallback to a heuristic string match so we still catch future SDK
+        // variations without enumerating every errno.
+        if (
+          typeof e.message === "string" &&
+          /network|socket|stream/i.test(e.message)
+        ) {
+          return true;
+        }
+
+        return false;
+      })();
+
+      if (isNetworkOrServerError) {
+        try {
+          const msgText =
+            "⚠️  Network error while contacting OpenAI. Please check your connection and try again.";
+          this.onItem({
+            id: `error-${Date.now()}`,
+            type: "message",
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text: msgText,
+              },
+            ],
+          });
+        } catch {
+          /* best‑effort */
+        }
+        this.onLoading(false);
+        return;
+      }
+
+      const isInvalidRequestError = () => {
+        if (!err || typeof err !== "object") {
+          return false;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e: any = err;
+
+        if (
+          e.type === "invalid_request_error" &&
+          e.code === "model_not_found"
+        ) {
+          return true;
+        }
+
+        if (
+          e.cause &&
+          e.cause.type === "invalid_request_error" &&
+          e.cause.code === "model_not_found"
+        ) {
+          return true;
+        }
+
+        return false;
+      };
+
+      if (isInvalidRequestError()) {
+        try {
+          // Extract request ID and error details from the error object
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const e: any = err;
+
+          const reqId =
+            e.request_id ??
+            (e.cause && e.cause.request_id) ??
+            (e.cause && e.cause.requestId);
+
+          const errorDetails = [
+            `Status: ${e.status || (e.cause && e.cause.status) || "unknown"}`,
+            `Code: ${e.code || (e.cause && e.cause.code) || "unknown"}`,
+            `Type: ${e.type || (e.cause && e.cause.type) || "unknown"}`,
+            `Message: ${
+              e.message || (e.cause && e.cause.message) || "unknown"
+            }`,
+          ].join(", ");
+
+          const msgText = `⚠️  OpenAI rejected the request${
+            reqId ? ` (request ID: ${reqId})` : ""
+          }. Error details: ${errorDetails}. Please verify your settings and try again.`;
+
+          this.onItem({
+            id: `error-${Date.now()}`,
+            type: "message",
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text: msgText,
+              },
+            ],
+          });
+        } catch {
+          /* best-effort */
+        }
+        this.onLoading(false);
+        return;
+      }
+
+      // Re‑throw all other errors so upstream handlers can decide what to do.
+      throw err;
+    }
+  }
+
+  // we need until we can depend on streaming events
+  private async processEventsWithoutStreaming(
+    output: Array<ResponseInputItem>,
+    emitItem: (item: ResponseItem) => void,
+  ): Promise<Array<ResponseInputItem>> {
+    // If the agent has been canceled we should short‑circuit immediately to
+    // avoid any further processing (including potentially expensive tool
+    // calls). Returning an empty array ensures the main run‑loop terminates
+    // promptly.
+    if (this.canceled) {
+      return [];
+    }
+    const turnInput: Array<ResponseInputItem> = [];
+    for (const item of output) {
+      if (item.type === "function_call") {
+        if (alreadyProcessedResponses.has(item.id)) {
+          continue;
+        }
+        alreadyProcessedResponses.add(item.id);
+        // eslint-disable-next-line no-await-in-loop
+        const result = await this.handleFunctionCall(item);
+        turnInput.push(...result);
+        //@ts-expect-error - waiting on sdk
+      } else if (item.type === "local_shell_call") {
+        //@ts-expect-error - waiting on sdk
+        if (alreadyProcessedResponses.has(item.id)) {
+          continue;
+        }
+        //@ts-expect-error - waiting on sdk
+        alreadyProcessedResponses.add(item.id);
+        // eslint-disable-next-line no-await-in-loop
+        const result = await this.handleLocalShellCall(item);
+        turnInput.push(...result);
+      }
+      emitItem(item as ResponseItem);
+    }
+    return turnInput;
+  }
+}
 `````
 
+## codex-cli/src/utils/agent/agent-loop.ts - 第 3/3 部分 (行 1601-1678)
+`````typescript// Dynamic developer message prefix: includes user, workdir, and rg suggestion.
+const userName = os.userInfo().username;
+const workdir = process.cwd();
+const dynamicLines: Array<string> = [
+  `User: ${userName}`,
+  `Workdir: ${workdir}`,
+];
+if (spawnSync("rg", ["--version"], { stdio: "ignore" }).status === 0) {
+  dynamicLines.push(
+    "- Always use rg instead of grep/ls -R because it is much faster and respects gitignore",
+  );
+}
+const dynamicPrefix = dynamicLines.join("\n");
+const prefix = `You are operating as and within the Codex CLI, a terminal-based agentic coding assistant built by OpenAI. It wraps OpenAI models to enable natural language interaction with a local codebase. You are expected to be precise, safe, and helpful.
+
+You can:
+- Receive user prompts, project context, and files.
+- Stream responses and emit function calls (e.g., shell commands, code edits).
+- Apply patches, run commands, and manage user approvals based on policy.
+- Work inside a sandboxed, git-backed workspace with rollback support.
+- Log telemetry so sessions can be replayed or inspected later.
+- More details on your functionality are available at \`codex --help\`
+
+The Codex CLI is open-sourced. Don't confuse yourself with the old Codex language model built by OpenAI many moons ago (this is understandably top of mind for you!). Within this context, Codex refers to the open-source agentic coding interface.
+
+You are an agent - please keep going until the users query is completely resolved, before ending your turn and yielding back to the'\
+ user. Only terminate your turn when you are sure that the problem is solved. If'\
+ you are not sure about file content or codebase structure pertaining to the use'\
+r's request, use your tools to read files and gather the relevant information: do NOT guess or make up an answer.
+
+Please resolve the user's task by editing and testing the code files in your current code execution session. You are a deployed coding agent. Your session allows for you to modify and run code. The repo(s) are already cloned in your working directory, and you must fully solve the problem for your answer to be considered correct.
+
+You MUST adhere to the following criteria when executing the task:
+- Working on the repo(s) in the current environment is allowed, even if they are proprietary.
+- Analyzing code for vulnerabilities is allowed.
+- Showing user code and tool call details is allowed.
+- User instructions may overwrite the *CODING GUIDELINES* section in this developer message.
+- Use \`apply_patch\` to edit files: {"cmd":["apply_patch",
+"*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n-  pass\\n+  return 123\\n*** End Patch"]}
+- If completing the user's task requires writing or modifying files:
+    - Your code and final answer should follow these *CODING GUIDELINES*:
+        - Fix the problem at the root cause rather than applying surface-level patches, when possible.
+        - Avoid unneeded complexity in your solution.
+            - Ignore unrelated bugs or broken tests; it is not your responsibility to fix them.
+        - Update documentation as necessary.
+        - Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.
+            - Use \`git log\` and \`git blame\` to search the history of the codebase if additional context is required; internet access is disabled.
+        - NEVER add copyright or license headers unless specifically requested.
+        - You do not need to \`git commit\` your changes; this will be done automatically for you.
+        - If there is a .pre-commit-config.yaml, use \`pre-commit run --files ...\` to check that your changes pass the pre-commit checks. However, do not fix pre-existing errors on lines you didn't touch.
+            - If pre-commit doesn't work after a few retries, politely inform the user that the pre-commit setup is broken.
+        - Once you finish coding, you must
+            - Remove all inline comments you added as much as possible, even if they look normal. Check using \`git diff\`. Inline comments must be generally avoided, unless active maintainers of the repo, after long careful study of the code and the issue, will still misinterpret the code without the comments.
+            - Check if you accidentally add copyright or license headers. If so, remove them.
+            - Try to run pre-commit if it is available.
+            - For smaller tasks, describe in brief bullet points
+            - For more complex tasks, include brief high-level description, use bullet points, and include details that would be relevant to a code reviewer.
+- If completing the user's task DOES NOT require writing or modifying files (e.g., the user asks a question about the code base):
+    - Respond in a friendly tone as a remote teammate, who is knowledgeable, capable and eager to help with coding.
+- When your task involves writing or modifying files:
+    - Do NOT tell the user to "save the file" or "copy the code into a file" if you already created or modified the file using \`apply_patch\`. Instead, reference the file as already saved.
+    - Do NOT show the full contents of large files you have already written, unless the user explicitly asks for them.
+
+${dynamicPrefix}`;
+
+function filterToApiMessages(
+  items: Array<ResponseInputItem>,
+): Array<ResponseInputItem> {
+  return items.filter((it) => {
+    if (it.type === "message" && it.role === "system") {
+      return false;
+    }
+    if (it.type === "reasoning") {
+      return false;
+    }
+    return true;
+  });
+}`````
 
 
 # codex-cli/src/utils/agent/apply-patch.ts
@@ -29237,9 +29933,10 @@ File references can only be relative, NEVER ABSOLUTE. After the apply_patch comm
 
 
 # codex-rs/apply-patch/src/lib.rs
+> 注意：此文件包含 1202 行，已分为 2 个部分显示
 
-`````rust
-mod parser;
+## codex-rs/apply-patch/src/lib.rs - 第 1/2 部分 (行 1-800)
+`````rustmod parser;
 mod seek_sequence;
 
 use std::collections::HashMap;
@@ -30038,8 +30735,10 @@ PATCH"#,
         );
         assert_eq!(stdout_str, expected_out);
         assert_eq!(stderr_str, "");
-        assert!(!src.exists());
-        let contents = fs::read_to_string(&dest).unwrap();
+        assert!(!src.exists());`````
+
+## codex-rs/apply-patch/src/lib.rs - 第 2/2 部分 (行 801-1202)
+`````rust        let contents = fs::read_to_string(&dest).unwrap();
         assert_eq!(contents, "line2\n");
     }
 
@@ -30239,10 +30938,208 @@ PATCH"#,
         let chunks = match patch.as_slice() {
             [Hunk::UpdateFile { chunks, .. }] => chunks,
             _ => panic!("Expected a single UpdateFile hunk"),
+        };
 
-... (文件太大，已截断)
-`````
+        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+        let expected_diff = r#"@@ -1,2 +1,2 @@
+-foo
++FOO
+ bar
+"#;
+        let expected = ApplyPatchFileUpdate {
+            unified_diff: expected_diff.to_string(),
+            content: "FOO\nbar\nbaz\n".to_string(),
+        };
+        assert_eq!(expected, diff);
+    }
 
+    #[test]
+    fn test_unified_diff_last_line_replacement() {
+        // Replace the very last line of the file.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("last.txt");
+        fs::write(&path, "foo\nbar\nbaz\n").unwrap();
+
+        let patch = wrap_patch(&format!(
+            r#"*** Update File: {}
+@@
+ foo
+ bar
+-baz
++BAZ
+"#,
+            path.display()
+        ));
+
+        let patch = parse_patch(&patch).unwrap();
+        let chunks = match patch.as_slice() {
+            [Hunk::UpdateFile { chunks, .. }] => chunks,
+            _ => panic!("Expected a single UpdateFile hunk"),
+        };
+
+        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+        let expected_diff = r#"@@ -2,2 +2,2 @@
+ bar
+-baz
++BAZ
+"#;
+        let expected = ApplyPatchFileUpdate {
+            unified_diff: expected_diff.to_string(),
+            content: "foo\nbar\nBAZ\n".to_string(),
+        };
+        assert_eq!(expected, diff);
+    }
+
+    #[test]
+    fn test_unified_diff_insert_at_eof() {
+        // Insert a new line at end‑of‑file.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("insert.txt");
+        fs::write(&path, "foo\nbar\nbaz\n").unwrap();
+
+        let patch = wrap_patch(&format!(
+            r#"*** Update File: {}
+@@
++quux
+*** End of File
+"#,
+            path.display()
+        ));
+
+        let patch = parse_patch(&patch).unwrap();
+        let chunks = match patch.as_slice() {
+            [Hunk::UpdateFile { chunks, .. }] => chunks,
+            _ => panic!("Expected a single UpdateFile hunk"),
+        };
+
+        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+        let expected_diff = r#"@@ -3 +3,2 @@
+ baz
++quux
+"#;
+        let expected = ApplyPatchFileUpdate {
+            unified_diff: expected_diff.to_string(),
+            content: "foo\nbar\nbaz\nquux\n".to_string(),
+        };
+        assert_eq!(expected, diff);
+    }
+
+    #[test]
+    fn test_unified_diff_interleaved_changes() {
+        // Original file with six lines.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("interleaved.txt");
+        fs::write(&path, "a\nb\nc\nd\ne\nf\n").unwrap();
+
+        // Patch replaces two separate lines and appends a new one at EOF using
+        // three distinct chunks.
+        let patch_body = format!(
+            r#"*** Update File: {}
+@@
+ a
+-b
++B
+@@
+ d
+-e
++E
+@@
+ f
++g
+*** End of File"#,
+            path.display()
+        );
+        let patch = wrap_patch(&patch_body);
+
+        // Extract chunks then build the unified diff.
+        let parsed = parse_patch(&patch).unwrap();
+        let chunks = match parsed.as_slice() {
+            [Hunk::UpdateFile { chunks, .. }] => chunks,
+            _ => panic!("Expected a single UpdateFile hunk"),
+        };
+
+        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+
+        let expected_diff = r#"@@ -1,6 +1,7 @@
+ a
+-b
++B
+ c
+ d
+-e
++E
+ f
++g
+"#;
+
+        let expected = ApplyPatchFileUpdate {
+            unified_diff: expected_diff.to_string(),
+            content: "a\nB\nc\nd\nE\nf\ng\n".to_string(),
+        };
+
+        assert_eq!(expected, diff);
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        let contents = fs::read_to_string(path).unwrap();
+        assert_eq!(
+            contents,
+            r#"a
+B
+c
+d
+E
+f
+g
+"#
+        );
+    }
+
+    #[test]
+    fn test_apply_patch_should_resolve_absolute_paths_in_cwd() {
+        let session_dir = tempdir().unwrap();
+        let relative_path = "source.txt";
+
+        // Note that we need this file to exist for the patch to be "verified"
+        // and parsed correctly.
+        let session_file_path = session_dir.path().join(relative_path);
+        fs::write(&session_file_path, "session directory content\n").unwrap();
+
+        let argv = vec![
+            "apply_patch".to_string(),
+            r#"*** Begin Patch
+*** Update File: source.txt
+@@
+-session directory content
++updated session directory content
+*** End Patch"#
+                .to_string(),
+        ];
+
+        let result = maybe_parse_apply_patch_verified(&argv, session_dir.path());
+
+        // Verify the patch contents - as otherwise we may have pulled contents
+        // from the wrong file (as we're using relative paths)
+        assert_eq!(
+            result,
+            MaybeApplyPatchVerified::Body(ApplyPatchAction {
+                changes: HashMap::from([(
+                    session_dir.path().join(relative_path),
+                    ApplyPatchFileChange::Update {
+                        unified_diff: r#"@@ -1 +1 @@
+-session directory content
++updated session directory content
+"#
+                        .to_string(),
+                        move_path: None,
+                        new_content: "updated session directory content\n".to_string(),
+                    },
+                )]),
+            })
+        );
+    }
+}`````
 
 
 # codex-rs/apply-patch/src/parser.rs
@@ -33692,9 +34589,10 @@ impl Stream for ResponseStream {
 
 
 # codex-rs/core/src/codex.rs
+> 注意：此文件包含 1940 行，已分为 3 个部分显示
 
-`````rust
-// Poisoned mutex should fail the program
+## codex-rs/core/src/codex.rs - 第 1/3 部分 (行 1-800)
+`````rust// Poisoned mutex should fail the program
 #![allow(clippy::unwrap_used)]
 
 use std::collections::HashMap;
@@ -34493,8 +35391,10 @@ async fn submission_loop(
 ///   conversation history and consider the task complete.
 async fn run_task(sess: Arc<Session>, sub_id: String, input: Vec<InputItem>) {
     if input.is_empty() {
-        return;
-    }
+        return;`````
+
+## codex-rs/core/src/codex.rs - 第 2/3 部分 (行 801-1600)
+`````rust    }
     let event = Event {
         id: sub_id.clone(),
         msg: EventMsg::TaskStarted,
@@ -34694,10 +35594,948 @@ async fn run_turn(
             state.previous_response_id.clone()
         } else {
             // When using ZDR, the Responses API may send previous_response_id
+            // back, but trying to use it results in a 400.
+            None
+        };
+        (prev_id, store)
+    };
 
-... (文件太大，已截断)
-`````
+    let extra_tools = sess.mcp_connection_manager.list_all_tools();
+    let prompt = Prompt {
+        input,
+        prev_id,
+        user_instructions: sess.instructions.clone(),
+        store,
+        extra_tools,
+    };
 
+    let mut retries = 0;
+    loop {
+        match try_run_turn(sess, &sub_id, &prompt).await {
+            Ok(output) => return Ok(output),
+            Err(CodexErr::Interrupted) => return Err(CodexErr::Interrupted),
+            Err(CodexErr::EnvVar(var)) => return Err(CodexErr::EnvVar(var)),
+            Err(e) => {
+                if retries < *OPENAI_STREAM_MAX_RETRIES {
+                    retries += 1;
+                    let delay = backoff(retries);
+                    warn!(
+                        "stream disconnected - retrying turn ({retries}/{} in {delay:?})...",
+                        *OPENAI_STREAM_MAX_RETRIES
+                    );
+
+                    // Surface retry information to any UI/front‑end so the
+                    // user understands what is happening instead of staring
+                    // at a seemingly frozen screen.
+                    sess.notify_background_event(
+                        &sub_id,
+                        format!(
+                            "stream error: {e}; retrying {retries}/{} in {:?}…",
+                            *OPENAI_STREAM_MAX_RETRIES, delay
+                        ),
+                    )
+                    .await;
+
+                    tokio::time::sleep(delay).await;
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+}
+
+/// When the model is prompted, it returns a stream of events. Some of these
+/// events map to a `ResponseItem`. A `ResponseItem` may need to be
+/// "handled" such that it produces a `ResponseInputItem` that needs to be
+/// sent back to the model on the next turn.
+struct ProcessedResponseItem {
+    item: ResponseItem,
+    response: Option<ResponseInputItem>,
+}
+
+async fn try_run_turn(
+    sess: &Session,
+    sub_id: &str,
+    prompt: &Prompt,
+) -> CodexResult<Vec<ProcessedResponseItem>> {
+    let mut stream = sess.client.clone().stream(prompt).await?;
+
+    // Buffer all the incoming messages from the stream first, then execute them.
+    // If we execute a function call in the middle of handling the stream, it can time out.
+    let mut input = Vec::new();
+    while let Some(event) = stream.next().await {
+        input.push(event?);
+    }
+
+    let mut output = Vec::new();
+    for event in input {
+        match event {
+            ResponseEvent::OutputItemDone(item) => {
+                let response = handle_response_item(sess, sub_id, item.clone()).await?;
+                output.push(ProcessedResponseItem { item, response });
+            }
+            ResponseEvent::Completed { response_id } => {
+                let mut state = sess.state.lock().unwrap();
+                state.previous_response_id = Some(response_id);
+                break;
+            }
+        }
+    }
+    Ok(output)
+}
+
+async fn handle_response_item(
+    sess: &Session,
+    sub_id: &str,
+    item: ResponseItem,
+) -> CodexResult<Option<ResponseInputItem>> {
+    debug!(?item, "Output item");
+    let output = match item {
+        ResponseItem::Message { content, .. } => {
+            for item in content {
+                if let ContentItem::OutputText { text } = item {
+                    let event = Event {
+                        id: sub_id.to_string(),
+                        msg: EventMsg::AgentMessage(AgentMessageEvent { message: text }),
+                    };
+                    sess.tx_event.send(event).await.ok();
+                }
+            }
+            None
+        }
+        ResponseItem::Reasoning { id: _, summary } => {
+            for item in summary {
+                let text = match item {
+                    ReasoningItemReasoningSummary::SummaryText { text } => text,
+                };
+                let event = Event {
+                    id: sub_id.to_string(),
+                    msg: EventMsg::AgentReasoning(AgentReasoningEvent { text }),
+                };
+                sess.tx_event.send(event).await.ok();
+            }
+            None
+        }
+        ResponseItem::FunctionCall {
+            name,
+            arguments,
+            call_id,
+        } => {
+            tracing::info!("FunctionCall: {arguments}");
+            Some(handle_function_call(sess, sub_id.to_string(), name, arguments, call_id).await)
+        }
+        ResponseItem::LocalShellCall {
+            id,
+            call_id,
+            status: _,
+            action,
+        } => {
+            let LocalShellAction::Exec(action) = action;
+            tracing::info!("LocalShellCall: {action:?}");
+            let params = ShellToolCallParams {
+                command: action.command,
+                workdir: action.working_directory,
+                timeout_ms: action.timeout_ms,
+            };
+            let effective_call_id = match (call_id, id) {
+                (Some(call_id), _) => call_id,
+                (None, Some(id)) => id,
+                (None, None) => {
+                    error!("LocalShellCall without call_id or id");
+                    return Ok(Some(ResponseInputItem::FunctionCallOutput {
+                        call_id: "".to_string(),
+                        output: FunctionCallOutputPayload {
+                            content: "LocalShellCall without call_id or id".to_string(),
+                            success: None,
+                        },
+                    }));
+                }
+            };
+
+            let exec_params = to_exec_params(params, sess);
+            Some(
+                handle_container_exec_with_params(
+                    exec_params,
+                    sess,
+                    sub_id.to_string(),
+                    effective_call_id,
+                )
+                .await,
+            )
+        }
+        ResponseItem::FunctionCallOutput { .. } => {
+            debug!("unexpected FunctionCallOutput from stream");
+            None
+        }
+        ResponseItem::Other => None,
+    };
+    Ok(output)
+}
+
+async fn handle_function_call(
+    sess: &Session,
+    sub_id: String,
+    name: String,
+    arguments: String,
+    call_id: String,
+) -> ResponseInputItem {
+    match name.as_str() {
+        "container.exec" | "shell" => {
+            let params = match parse_container_exec_arguments(arguments, sess, &call_id) {
+                Ok(params) => params,
+                Err(output) => {
+                    return output;
+                }
+            };
+            handle_container_exec_with_params(params, sess, sub_id, call_id).await
+        }
+        _ => {
+            match try_parse_fully_qualified_tool_name(&name) {
+                Some((server, tool_name)) => {
+                    // TODO(mbolin): Determine appropriate timeout for tool call.
+                    let timeout = None;
+                    handle_mcp_tool_call(
+                        sess, &sub_id, call_id, server, tool_name, arguments, timeout,
+                    )
+                    .await
+                }
+                None => {
+                    // Unknown function: reply with structured failure so the model can adapt.
+                    ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: crate::models::FunctionCallOutputPayload {
+                            content: format!("unsupported call: {}", name),
+                            success: None,
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn to_exec_params(params: ShellToolCallParams, sess: &Session) -> ExecParams {
+    ExecParams {
+        command: params.command,
+        cwd: sess.resolve_path(params.workdir.clone()),
+        timeout_ms: params.timeout_ms,
+        env: create_env(&sess.shell_environment_policy),
+    }
+}
+
+fn parse_container_exec_arguments(
+    arguments: String,
+    sess: &Session,
+    call_id: &str,
+) -> Result<ExecParams, ResponseInputItem> {
+    // parse command
+    match serde_json::from_str::<ShellToolCallParams>(&arguments) {
+        Ok(shell_tool_call_params) => Ok(to_exec_params(shell_tool_call_params, sess)),
+        Err(e) => {
+            // allow model to re-sample
+            let output = ResponseInputItem::FunctionCallOutput {
+                call_id: call_id.to_string(),
+                output: crate::models::FunctionCallOutputPayload {
+                    content: format!("failed to parse function arguments: {e}"),
+                    success: None,
+                },
+            };
+            Err(output)
+        }
+    }
+}
+
+async fn handle_container_exec_with_params(
+    params: ExecParams,
+    sess: &Session,
+    sub_id: String,
+    call_id: String,
+) -> ResponseInputItem {
+    // check if this was a patch, and apply it if so
+    match maybe_parse_apply_patch_verified(&params.command, &params.cwd) {
+        MaybeApplyPatchVerified::Body(changes) => {
+            return apply_patch(sess, sub_id, call_id, changes).await;
+        }
+        MaybeApplyPatchVerified::CorrectnessError(parse_error) => {
+            // It looks like an invocation of `apply_patch`, but we
+            // could not resolve it into a patch that would apply
+            // cleanly. Return to model for resample.
+            return ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output: FunctionCallOutputPayload {
+                    content: format!("error: {parse_error:#}"),
+                    success: None,
+                },
+            };
+        }
+        MaybeApplyPatchVerified::ShellParseError(error) => {
+            trace!("Failed to parse shell command, {error:?}");
+        }
+        MaybeApplyPatchVerified::NotApplyPatch => (),
+    }
+
+    // safety checks
+    let safety = {
+        let state = sess.state.lock().unwrap();
+        assess_command_safety(
+            &params.command,
+            sess.approval_policy,
+            &sess.sandbox_policy,
+            &state.approved_commands,
+        )
+    };
+    let sandbox_type = match safety {
+        SafetyCheck::AutoApprove { sandbox_type } => sandbox_type,
+        SafetyCheck::AskUser => {
+            let rx_approve = sess
+                .request_command_approval(
+                    sub_id.clone(),
+                    params.command.clone(),
+                    params.cwd.clone(),
+                    None,
+                )
+                .await;
+            match rx_approve.await.unwrap_or_default() {
+                ReviewDecision::Approved => (),
+                ReviewDecision::ApprovedForSession => {
+                    sess.add_approved_command(params.command.clone());
+                }
+                ReviewDecision::Denied | ReviewDecision::Abort => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: crate::models::FunctionCallOutputPayload {
+                            content: "exec command rejected by user".to_string(),
+                            success: None,
+                        },
+                    };
+                }
+            }
+            // No sandboxing is applied because the user has given
+            // explicit approval. Often, we end up in this case because
+            // the command cannot be run in a sandbox, such as
+            // installing a new dependency that requires network access.
+            SandboxType::None
+        }
+        SafetyCheck::Reject { reason } => {
+            return ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output: crate::models::FunctionCallOutputPayload {
+                    content: format!("exec command rejected: {reason}"),
+                    success: None,
+                },
+            };
+        }
+    };
+
+    sess.notify_exec_command_begin(&sub_id, &call_id, &params)
+        .await;
+
+    let output_result = process_exec_tool_call(
+        params.clone(),
+        sandbox_type,
+        sess.ctrl_c.clone(),
+        &sess.sandbox_policy,
+        &sess.codex_linux_sandbox_exe,
+    )
+    .await;
+
+    match output_result {
+        Ok(output) => {
+            let ExecToolCallOutput {
+                exit_code,
+                stdout,
+                stderr,
+                duration,
+            } = output;
+
+            sess.notify_exec_command_end(&sub_id, &call_id, &stdout, &stderr, exit_code)
+                .await;
+
+            let is_success = exit_code == 0;
+            let content = format_exec_output(
+                if is_success { &stdout } else { &stderr },
+                exit_code,
+                duration,
+            );
+
+            ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output: FunctionCallOutputPayload {
+                    content,
+                    success: Some(is_success),
+                },
+            }
+        }
+        Err(CodexErr::Sandbox(error)) => {
+            handle_sanbox_error(error, sandbox_type, params, sess, sub_id, call_id).await
+        }
+        Err(e) => {
+            // Handle non-sandbox errors
+            ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output: FunctionCallOutputPayload {
+                    content: format!("execution error: {e}"),
+                    success: None,
+                },
+            }
+        }
+    }
+}
+
+async fn handle_sanbox_error(
+    error: SandboxErr,
+    sandbox_type: SandboxType,
+    params: ExecParams,
+    sess: &Session,
+    sub_id: String,
+    call_id: String,
+) -> ResponseInputItem {
+    // Early out if the user never wants to be asked for approval; just return to the model immediately
+    if sess.approval_policy == AskForApproval::Never {
+        return ResponseInputItem::FunctionCallOutput {
+            call_id,
+            output: FunctionCallOutputPayload {
+                content: format!(
+                    "failed in sandbox {:?} with execution error: {error}",
+                    sandbox_type
+                ),
+                success: Some(false),
+            },
+        };
+    }
+
+    // Ask the user to retry without sandbox
+    sess.notify_background_event(&sub_id, format!("Execution failed: {error}"))
+        .await;
+
+    let rx_approve = sess
+        .request_command_approval(
+            sub_id.clone(),
+            params.command.clone(),
+            params.cwd.clone(),
+            Some("command failed; retry without sandbox?".to_string()),
+        )
+        .await;
+
+    match rx_approve.await.unwrap_or_default() {
+        ReviewDecision::Approved | ReviewDecision::ApprovedForSession => {
+            // Persist this command as pre‑approved for the
+            // remainder of the session so future
+            // executions skip the sandbox directly.
+            // TODO(ragona): Isn't this a bug? It always saves the command in an | fork?
+            sess.add_approved_command(params.command.clone());
+            // Inform UI we are retrying without sandbox.
+            sess.notify_background_event(&sub_id, "retrying command without sandbox")
+                .await;
+
+            // Emit a fresh Begin event so progress bars reset.
+            let retry_call_id = format!("{call_id}-retry");
+            sess.notify_exec_command_begin(&sub_id, &retry_call_id, &params)
+                .await;
+
+            // This is an escalated retry; the policy will not be
+            // examined and the sandbox has been set to `None`.
+            let retry_output_result = process_exec_tool_call(
+                params,
+                SandboxType::None,
+                sess.ctrl_c.clone(),
+                &sess.sandbox_policy,
+                &sess.codex_linux_sandbox_exe,
+            )
+            .await;
+
+            match retry_output_result {
+                Ok(retry_output) => {
+                    let ExecToolCallOutput {
+                        exit_code,
+                        stdout,
+                        stderr,
+                        duration,
+                    } = retry_output;
+
+                    sess.notify_exec_command_end(
+                        &sub_id,
+                        &retry_call_id,
+                        &stdout,
+                        &stderr,
+                        exit_code,
+                    )
+                    .await;
+
+                    let is_success = exit_code == 0;
+                    let content = format_exec_output(
+                        if is_success { &stdout } else { &stderr },
+                        exit_code,
+                        duration,
+                    );
+
+                    ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content,
+                            success: Some(is_success),
+                        },
+                    }
+                }
+                Err(e) => {
+                    // Handle retry failure
+                    ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("retry failed: {e}"),
+                            success: None,
+                        },
+                    }
+                }
+            }
+        }
+        ReviewDecision::Denied | ReviewDecision::Abort => {
+            // Fall through to original failure handling.
+            ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output: FunctionCallOutputPayload {
+                    content: "exec command rejected by user".to_string(),
+                    success: None,
+                },
+            }
+        }
+    }
+}
+
+async fn apply_patch(
+    sess: &Session,
+    sub_id: String,
+    call_id: String,
+    action: ApplyPatchAction,
+) -> ResponseInputItem {
+    let writable_roots_snapshot = {
+        let guard = sess.writable_roots.lock().unwrap();
+        guard.clone()
+    };
+
+    let auto_approved = match assess_patch_safety(
+        &action,
+        sess.approval_policy,
+        &writable_roots_snapshot,
+        &sess.cwd,
+    ) {
+        SafetyCheck::AutoApprove { .. } => true,
+        SafetyCheck::AskUser => {
+            // Compute a readable summary of path changes to include in the
+            // approval request so the user can make an informed decision.
+            let rx_approve = sess
+                .request_patch_approval(sub_id.clone(), &action, None, None)
+                .await;
+            match rx_approve.await.unwrap_or_default() {
+                ReviewDecision::Approved | ReviewDecision::ApprovedForSession => false,
+                ReviewDecision::Denied | ReviewDecision::Abort => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: "patch rejected by user".to_string(),
+                            success: Some(false),
+                        },
+                    };
+                }
+            }
+        }
+        SafetyCheck::Reject { reason } => {
+            return ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output: FunctionCallOutputPayload {
+                    content: format!("patch rejected: {reason}"),
+                    success: Some(false),
+                },
+            };
+        }
+    };
+
+    // Verify write permissions before touching the filesystem.
+    let writable_snapshot = { sess.writable_roots.lock().unwrap().clone() };
+
+    if let Some(offending) = first_offending_path(&action, &writable_snapshot, &sess.cwd) {
+        let root = offending.parent().unwrap_or(&offending).to_path_buf();
+
+        let reason = Some(format!(
+            "grant write access to {} for this session",
+            root.display()
+        ));
+
+        let rx = sess
+            .request_patch_approval(sub_id.clone(), &action, reason.clone(), Some(root.clone()))
+            .await;
+
+        if !matches!(
+            rx.await.unwrap_or_default(),
+            ReviewDecision::Approved | ReviewDecision::ApprovedForSession
+        ) {
+            return ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output: FunctionCallOutputPayload {
+                    content: "patch rejected by user".to_string(),
+                    success: Some(false),
+                },
+            };
+        }
+
+        // user approved, extend writable roots for this session
+        sess.writable_roots.lock().unwrap().push(root);
+    }
+
+    let _ = sess
+        .tx_event
+        .send(Event {
+            id: sub_id.clone(),
+            msg: EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
+                call_id: call_id.clone(),
+                auto_approved,
+                changes: convert_apply_patch_to_protocol(&action),
+            }),
+        })
+        .await;`````
+
+## codex-rs/core/src/codex.rs - 第 3/3 部分 (行 1601-1940)
+`````rust
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    // Enforce writable roots. If a write is blocked, collect offending root
+    // and prompt the user to extend permissions.
+    let mut result = apply_changes_from_apply_patch_and_report(&action, &mut stdout, &mut stderr);
+
+    if let Err(err) = &result {
+        if err.kind() == std::io::ErrorKind::PermissionDenied {
+            // Determine first offending path.
+            let offending_opt = action
+                .changes()
+                .iter()
+                .flat_map(|(path, change)| match change {
+                    ApplyPatchFileChange::Add { .. } => vec![path.as_ref()],
+                    ApplyPatchFileChange::Delete => vec![path.as_ref()],
+                    ApplyPatchFileChange::Update {
+                        move_path: Some(move_path),
+                        ..
+                    } => {
+                        vec![path.as_ref(), move_path.as_ref()]
+                    }
+                    ApplyPatchFileChange::Update {
+                        move_path: None, ..
+                    } => vec![path.as_ref()],
+                })
+                .find_map(|path: &Path| {
+                    // ApplyPatchAction promises to guarantee absolute paths.
+                    if !path.is_absolute() {
+                        panic!("apply_patch invariant failed: path is not absolute: {path:?}");
+                    }
+
+                    let writable = {
+                        let roots = sess.writable_roots.lock().unwrap();
+                        roots.iter().any(|root| path.starts_with(root))
+                    };
+                    if writable {
+                        None
+                    } else {
+                        Some(path.to_path_buf())
+                    }
+                });
+
+            if let Some(offending) = offending_opt {
+                let root = offending.parent().unwrap_or(&offending).to_path_buf();
+
+                let reason = Some(format!(
+                    "grant write access to {} for this session",
+                    root.display()
+                ));
+                let rx = sess
+                    .request_patch_approval(
+                        sub_id.clone(),
+                        &action,
+                        reason.clone(),
+                        Some(root.clone()),
+                    )
+                    .await;
+                if matches!(
+                    rx.await.unwrap_or_default(),
+                    ReviewDecision::Approved | ReviewDecision::ApprovedForSession
+                ) {
+                    // Extend writable roots.
+                    sess.writable_roots.lock().unwrap().push(root);
+                    stdout.clear();
+                    stderr.clear();
+                    result = apply_changes_from_apply_patch_and_report(
+                        &action,
+                        &mut stdout,
+                        &mut stderr,
+                    );
+                }
+            }
+        }
+    }
+
+    // Emit PatchApplyEnd event.
+    let success_flag = result.is_ok();
+    let _ = sess
+        .tx_event
+        .send(Event {
+            id: sub_id.clone(),
+            msg: EventMsg::PatchApplyEnd(PatchApplyEndEvent {
+                call_id: call_id.clone(),
+                stdout: String::from_utf8_lossy(&stdout).to_string(),
+                stderr: String::from_utf8_lossy(&stderr).to_string(),
+                success: success_flag,
+            }),
+        })
+        .await;
+
+    match result {
+        Ok(_) => ResponseInputItem::FunctionCallOutput {
+            call_id,
+            output: FunctionCallOutputPayload {
+                content: String::from_utf8_lossy(&stdout).to_string(),
+                success: None,
+            },
+        },
+        Err(e) => ResponseInputItem::FunctionCallOutput {
+            call_id,
+            output: FunctionCallOutputPayload {
+                content: format!("error: {e:#}, stderr: {}", String::from_utf8_lossy(&stderr)),
+                success: Some(false),
+            },
+        },
+    }
+}
+
+/// Return the first path in `hunks` that is NOT under any of the
+/// `writable_roots` (after normalising). If all paths are acceptable,
+/// returns None.
+fn first_offending_path(
+    action: &ApplyPatchAction,
+    writable_roots: &[PathBuf],
+    cwd: &Path,
+) -> Option<PathBuf> {
+    let changes = action.changes();
+    for (path, change) in changes {
+        let candidate = match change {
+            ApplyPatchFileChange::Add { .. } => path,
+            ApplyPatchFileChange::Delete => path,
+            ApplyPatchFileChange::Update { move_path, .. } => move_path.as_ref().unwrap_or(path),
+        };
+
+        let abs = if candidate.is_absolute() {
+            candidate.clone()
+        } else {
+            cwd.join(candidate)
+        };
+
+        let mut allowed = false;
+        for root in writable_roots {
+            let root_abs = if root.is_absolute() {
+                root.clone()
+            } else {
+                cwd.join(root)
+            };
+            if abs.starts_with(&root_abs) {
+                allowed = true;
+                break;
+            }
+        }
+
+        if !allowed {
+            return Some(candidate.clone());
+        }
+    }
+    None
+}
+
+fn convert_apply_patch_to_protocol(action: &ApplyPatchAction) -> HashMap<PathBuf, FileChange> {
+    let changes = action.changes();
+    let mut result = HashMap::with_capacity(changes.len());
+    for (path, change) in changes {
+        let protocol_change = match change {
+            ApplyPatchFileChange::Add { content } => FileChange::Add {
+                content: content.clone(),
+            },
+            ApplyPatchFileChange::Delete => FileChange::Delete,
+            ApplyPatchFileChange::Update {
+                unified_diff,
+                move_path,
+                new_content: _new_content,
+            } => FileChange::Update {
+                unified_diff: unified_diff.clone(),
+                move_path: move_path.clone(),
+            },
+        };
+        result.insert(path.clone(), protocol_change);
+    }
+    result
+}
+
+fn apply_changes_from_apply_patch_and_report(
+    action: &ApplyPatchAction,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
+) -> std::io::Result<()> {
+    match apply_changes_from_apply_patch(action) {
+        Ok(affected_paths) => {
+            print_summary(&affected_paths, stdout)?;
+        }
+        Err(err) => {
+            writeln!(stderr, "{err:?}")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_changes_from_apply_patch(action: &ApplyPatchAction) -> anyhow::Result<AffectedPaths> {
+    let mut added: Vec<PathBuf> = Vec::new();
+    let mut modified: Vec<PathBuf> = Vec::new();
+    let mut deleted: Vec<PathBuf> = Vec::new();
+
+    let changes = action.changes();
+    for (path, change) in changes {
+        match change {
+            ApplyPatchFileChange::Add { content } => {
+                if let Some(parent) = path.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        std::fs::create_dir_all(parent).with_context(|| {
+                            format!("Failed to create parent directories for {}", path.display())
+                        })?;
+                    }
+                }
+                std::fs::write(path, content)
+                    .with_context(|| format!("Failed to write file {}", path.display()))?;
+                added.push(path.clone());
+            }
+            ApplyPatchFileChange::Delete => {
+                std::fs::remove_file(path)
+                    .with_context(|| format!("Failed to delete file {}", path.display()))?;
+                deleted.push(path.clone());
+            }
+            ApplyPatchFileChange::Update {
+                unified_diff: _unified_diff,
+                move_path,
+                new_content,
+            } => {
+                if let Some(move_path) = move_path {
+                    if let Some(parent) = move_path.parent() {
+                        if !parent.as_os_str().is_empty() {
+                            std::fs::create_dir_all(parent).with_context(|| {
+                                format!(
+                                    "Failed to create parent directories for {}",
+                                    move_path.display()
+                                )
+                            })?;
+                        }
+                    }
+
+                    std::fs::rename(path, move_path)
+                        .with_context(|| format!("Failed to rename file {}", path.display()))?;
+                    std::fs::write(move_path, new_content)?;
+                    modified.push(move_path.clone());
+                    deleted.push(path.clone());
+                } else {
+                    std::fs::write(path, new_content)?;
+                    modified.push(path.clone());
+                }
+            }
+        }
+    }
+
+    Ok(AffectedPaths {
+        added,
+        modified,
+        deleted,
+    })
+}
+
+fn get_writable_roots(cwd: &Path) -> Vec<std::path::PathBuf> {
+    let mut writable_roots = Vec::new();
+    if cfg!(target_os = "macos") {
+        // On macOS, $TMPDIR is private to the user.
+        writable_roots.push(std::env::temp_dir());
+
+        // Allow pyenv to update its shims directory. Without this, any tool
+        // that happens to be managed by `pyenv` will fail with an error like:
+        //
+        //   pyenv: cannot rehash: $HOME/.pyenv/shims isn't writable
+        //
+        // which is emitted every time `pyenv` tries to run `rehash` (for
+        // example, after installing a new Python package that drops an entry
+        // point). Although the sandbox is intentionally read‑only by default,
+        // writing to the user's local `pyenv` directory is safe because it
+        // is already user‑writable and scoped to the current user account.
+        if let Ok(home_dir) = std::env::var("HOME") {
+            let pyenv_dir = PathBuf::from(home_dir).join(".pyenv");
+            writable_roots.push(pyenv_dir);
+        }
+    }
+
+    writable_roots.push(cwd.to_path_buf());
+
+    writable_roots
+}
+
+/// Exec output is a pre-serialized JSON payload
+fn format_exec_output(output: &str, exit_code: i32, duration: std::time::Duration) -> String {
+    #[derive(Serialize)]
+    struct ExecMetadata {
+        exit_code: i32,
+        duration_seconds: f32,
+    }
+
+    #[derive(Serialize)]
+    struct ExecOutput<'a> {
+        output: &'a str,
+        metadata: ExecMetadata,
+    }
+
+    // round to 1 decimal place
+    let duration_seconds = ((duration.as_secs_f32()) * 10.0).round() / 10.0;
+
+    let payload = ExecOutput {
+        output,
+        metadata: ExecMetadata {
+            exit_code,
+            duration_seconds,
+        },
+    };
+
+    #[expect(clippy::expect_used)]
+    serde_json::to_string(&payload).expect("serialize ExecOutput")
+}
+
+fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -> Option<String> {
+    responses.iter().rev().find_map(|item| {
+        if let ResponseItem::Message { role, content } = item {
+            if role == "assistant" {
+                content.iter().rev().find_map(|ci| {
+                    if let ContentItem::OutputText { text } = ci {
+                        Some(text.clone())
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    })
+}
+
+/// See [`ConversationHistory`] for details.
+fn record_conversation_history(disable_response_storage: bool, wire_api: WireApi) -> bool {
+    if disable_response_storage {
+        return true;
+    }
+
+    match wire_api {
+        WireApi::Responses => false,
+        WireApi::Chat => true,
+    }
+}`````
 
 
 # codex-rs/core/src/codex_wrapper.rs
@@ -47796,9 +49634,10 @@ if __name__ == "__main__":
 
 
 # codex-rs/mcp-types/schema/2025-03-26/schema.json
+> 注意：此文件包含 2292 行，已分为 3 个部分显示
 
-`````javascript
-{
+## codex-rs/mcp-types/schema/2025-03-26/schema.json - 第 1/3 部分 (行 1-800)
+`````javascript{
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
         "Annotations": {
@@ -48597,8 +50436,10 @@ if __name__ == "__main__":
             "type": "object"
         },
         "JSONRPCMessage": {
-            "anyOf": [
-                {
+            "anyOf": [`````
+
+## codex-rs/mcp-types/schema/2025-03-26/schema.json - 第 2/3 部分 (行 801-1600)
+`````javascript                {
                     "$ref": "#/definitions/JSONRPCRequest"
                 },
                 {
@@ -48798,16 +50639,1307 @@ if __name__ == "__main__":
                 }
             },
             "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "ListResourceTemplatesResult": {
+            "description": "The server's response to a resources/templates/list request from the client.",
+            "properties": {
+                "_meta": {
+                    "additionalProperties": {},
+                    "description": This result property is reserved by the protocol to allow clients and servers to"\
+                     attach additional metadata to their responses.",
+                    "type": "object"
+                },
+                "nextCursor": {
+                    "description": An opaque token representing the pagination position after the last returned res"\
+                    ult.\nIf present, there may be more results available.",
+                    "type": "string"
+                },
+                "resourceTemplates": {
+                    "items": {
+                        "$ref": "#/definitions/ResourceTemplate"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "resourceTemplates"
+            ],
+            "type": "object"
+        },
+        "ListResourcesRequest": {
+            "description": "Sent from the client to request a list of resources the server has.",
+            "properties": {
+                "method": {
+                    "const": "resources/list",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "cursor": {
+                            "description": An opaque token representing the current pagination position.\nIf provided, the "\
+                            server should return results starting after this cursor.",
+                            "type": "string"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "ListResourcesResult": {
+            "description": "The server's response to a resources/list request from the client.",
+            "properties": {
+                "_meta": {
+                    "additionalProperties": {},
+                    "description": This result property is reserved by the protocol to allow clients and servers to"\
+                     attach additional metadata to their responses.",
+                    "type": "object"
+                },
+                "nextCursor": {
+                    "description": An opaque token representing the pagination position after the last returned res"\
+                    ult.\nIf present, there may be more results available.",
+                    "type": "string"
+                },
+                "resources": {
+                    "items": {
+                        "$ref": "#/definitions/Resource"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "resources"
+            ],
+            "type": "object"
+        },
+        "ListRootsRequest": {
+            "description": Sent from the server to request a list of root URIs from the client. Roots allow"\
+            \nservers to ask for specific directories or files to operate on. A common examp"\
+            le\nfor roots is providing a set of repositories or directories a server should "\
+            operate\non.\n\nThis request is typically used when the server needs to understa"\
+            nd the file system\nstructure or access specific locations that the client has p"\
+            ermission to read from.",
+            "properties": {
+                "method": {
+                    "const": "roots/list",
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "properties": {
+                                "progressToken": {
+                                    "$ref": "#/definitions/ProgressToken",
+                                    "description": If specified, the caller is requesting out-of-band progress notifications for th"\
+                                    is request (as represented by notifications/progress). The value of this paramet"\
+                                    er is an opaque token that will be attached to any subsequent notifications. The"\
+                                     receiver is not obligated to provide these notifications."
+                                }
+                            },
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "ListRootsResult": {
+            "description": "The clients response to a roots/list request from the server.\nThis result contains an arr'\
+            ay of Root objects, each representing a root directory\nor file that the server '\
+            can operate on.',
+            "properties": {
+                "_meta": {
+                    "additionalProperties": {},
+                    "description": This result property is reserved by the protocol to allow clients and servers to"\
+                     attach additional metadata to their responses.",
+                    "type": "object"
+                },
+                "roots": {
+                    "items": {
+                        "$ref": "#/definitions/Root"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "roots"
+            ],
+            "type": "object"
+        },
+        "ListToolsRequest": {
+            "description": "Sent from the client to request a list of tools the server has.",
+            "properties": {
+                "method": {
+                    "const": "tools/list",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "cursor": {
+                            "description": An opaque token representing the current pagination position.\nIf provided, the "\
+                            server should return results starting after this cursor.",
+                            "type": "string"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "ListToolsResult": {
+            "description": "The server's response to a tools/list request from the client.",
+            "properties": {
+                "_meta": {
+                    "additionalProperties": {},
+                    "description": This result property is reserved by the protocol to allow clients and servers to"\
+                     attach additional metadata to their responses.",
+                    "type": "object"
+                },
+                "nextCursor": {
+                    "description": An opaque token representing the pagination position after the last returned res"\
+                    ult.\nIf present, there may be more results available.",
+                    "type": "string"
+                },
+                "tools": {
+                    "items": {
+                        "$ref": "#/definitions/Tool"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "tools"
+            ],
+            "type": "object"
+        },
+        "LoggingLevel": {
+            "description": The severity of a log message.\n\nThese map to syslog message severities, as spe"\
+            cified in RFC-5424:\nhttps://datatracker.ietf.org/doc/html/rfc5424#section-6.2.1",
+            "enum": [
+                "alert",
+                "critical",
+                "debug",
+                "emergency",
+                "error",
+                "info",
+                "notice",
+                "warning"
+            ],
+            "type": "string"
+        },
+        "LoggingMessageNotification": {
+            "description": Notification of a log message passed from server to client. If no logging/setLev"\
+            el request has been sent from the client, the server MAY decide which messages t"\
+            o send automatically.",
+            "properties": {
+                "method": {
+                    "const": "notifications/message",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "data": {
+                            "description": The data to be logged, such as a string message or an object. Any JSON serializa"\
+                            ble type is allowed here."
+                        },
+                        "level": {
+                            "$ref": "#/definitions/LoggingLevel",
+                            "description": "The severity of this log message."
+                        },
+                        "logger": {
+                            "description": "An optional name of the logger issuing this message.",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "data",
+                        "level"
+                    ],
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method",
+                "params"
+            ],
+            "type": "object"
+        },
+        "ModelHint": {
+            "description": Hints to use for model selection.\n\nKeys not declared here are currently left u"\
+            nspecified by the spec and are up\nto the client to interpret.",
+            "properties": {
+                "name": {
+                    "description": A hint for a model name.\n\nThe client SHOULD treat this as a substring of a mod"\
+                    el name; for example:\n - `claude-3-5-sonnet` should match `claude-3-5-sonnet-20"\
+                    241022`\n - `sonnet` should match `claude-3-5-sonnet-20241022`, `claude-3-sonnet"\
+                    -20240229`, etc.\n - `claude` should match any Claude model\n\nThe client MAY al"\
+                    so map the string to a different provider"s model name or a different model family, as long as it fills a similar niche; for example:\n - `gemini-1.5-flash` could match `claude-3-haiku-20240307`",
+                    "type": "string"
+                }
+            },
+            "type": "object"
+        },
+        "ModelPreferences": {
+            "description": "The servers preferences for model selection, requested of the client during sampling.\n\nB'\
+            ecause LLMs can vary along multiple dimensions, choosing the \'best\ model is\nrarely straightforward.  Different models excel in different areas—so"\
+            me are\nfaster but less capable, others are more capable but more expensive, and"\
+             so\non. This interface allows servers to express their priorities across multip"\
+            le\ndimensions to help clients make an appropriate selection for their use case."\
+            \n\nThese preferences are always advisory. The client MAY ignore them. It is als"\
+            o\nup to the client to decide how to interpret these preferences and how to\nbal"\
+            ance them against other considerations.",
+            "properties": {
+                "costPriority": {
+                    "description": How much to prioritize cost when selecting a model. A value of 0 means cost\nis "\
+                    not important, while a value of 1 means cost is the most important\nfactor.",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                },
+                "hints": {
+                    "description": Optional hints to use for model selection.\n\nIf multiple hints are specified, t"\
+                    he client MUST evaluate them in order\n(such that the first match is taken).\n\n"\
+                    The client SHOULD prioritize these hints over the numeric priorities, but\nMAY s"\
+                    till use the priorities to select from ambiguous matches.",
+                    "items": {
+                        "$ref": "#/definitions/ModelHint"
+                    },
+                    "type": "array"
+                },
+                "intelligencePriority": {
+                    "description": How much to prioritize intelligence and capabilities when selecting a\nmodel. A "\
+                    value of 0 means intelligence is not important, while a value of 1\nmeans intell"\
+                    igence is the most important factor.",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                },
+                "speedPriority": {
+                    "description": How much to prioritize sampling speed (latency) when selecting a model. A\nvalue"\
+                     of 0 means speed is not important, while a value of 1 means speed is\nthe most "\
+                    important factor.",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                }
+            },
+            "type": "object"
+        },
+        "Notification": {
+            "properties": {
+                "method": {
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "additionalProperties": {},
+                            "description": This parameter name is reserved by MCP to allow clients and servers to attach ad"\
+                            ditional metadata to their notifications.",
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "PaginatedRequest": {
+            "properties": {
+                "method": {
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "cursor": {
+                            "description": An opaque token representing the current pagination position.\nIf provided, the "\
+                            server should return results starting after this cursor.",
+                            "type": "string"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "PaginatedResult": {
+            "properties": {
+                "_meta": {
+                    "additionalProperties": {},
+                    "description": This result property is reserved by the protocol to allow clients and servers to"\
+                     attach additional metadata to their responses.",
+                    "type": "object"
+                },
+                "nextCursor": {
+                    "description": An opaque token representing the pagination position after the last returned res"\
+                    ult.\nIf present, there may be more results available.",
+                    "type": "string"
+                }
+            },
+            "type": "object"
+        },
+        "PingRequest": {
+            "description": A ping, issued by either the server or the client, to check that the other party"\
+             is still alive. The receiver must promptly respond, or else may be disconnected"\
+            .",
+            "properties": {
+                "method": {
+                    "const": "ping",
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "properties": {
+                                "progressToken": {
+                                    "$ref": "#/definitions/ProgressToken",
+                                    "description": If specified, the caller is requesting out-of-band progress notifications for th"\
+                                    is request (as represented by notifications/progress). The value of this paramet"\
+                                    er is an opaque token that will be attached to any subsequent notifications. The"\
+                                     receiver is not obligated to provide these notifications."
+                                }
+                            },
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "ProgressNotification": {
+            "description": An out-of-band notification used to inform the receiver of a progress update for"\
+             a long-running request.",
+            "properties": {
+                "method": {
+                    "const": "notifications/progress",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "message": {
+                            "description": "An optional message describing the current progress.",
+                            "type": "string"
+                        },
+                        "progress": {
+                            "description": The progress thus far. This should increase every time progress is made, even if"\
+                             the total is unknown.",
+                            "type": "number"
+                        },
+                        "progressToken": {
+                            "$ref": "#/definitions/ProgressToken",
+                            "description": The progress token which was given in the initial request, used to associate thi"\
+                            s notification with the request that is proceeding."
+                        },
+                        "total": {
+                            "description": "Total number of items to process (or total progress required), if known.",
+                            "type": "number"
+                        }
+                    },
+                    "required": [
+                        "progress",
+                        "progressToken"
+                    ],
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method",
+                "params"
+            ],
+            "type": "object"
+        },
+        "ProgressToken": {
+            "description": "A progress token, used to associate progress notifications with the original request.",
+            "type": [
+                "string",
+                "integer"
+            ]
+        },
+        "Prompt": {
+            "description": "A prompt or prompt template that the server offers.",
+            "properties": {
+                "arguments": {
+                    "description": "A list of arguments to use for templating the prompt.",
+                    "items": {
+                        "$ref": "#/definitions/PromptArgument"
+                    },
+                    "type": "array"
+                },
+                "description": {
+                    "description": "An optional description of what this prompt provides",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "The name of the prompt or prompt template.",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name"
+            ],
+            "type": "object"
+        },
+        "PromptArgument": {
+            "description": "Describes an argument that a prompt can accept.",
+            "properties": {
+                "description": {
+                    "description": "A human-readable description of the argument.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "The name of the argument.",
+                    "type": "string"
+                },
+                "required": {
+                    "description": "Whether this argument must be provided.",
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "name"
+            ],
+            "type": "object"
+        },
+        "PromptListChangedNotification": {
+            "description": An optional notification from the server to the client, informing it that the li"\
+            st of prompts it offers has changed. This may be issued by servers without any p"\
+            revious subscription from the client.",
+            "properties": {
+                "method": {
+                    "const": "notifications/prompts/list_changed",
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "additionalProperties": {},
+                            "description": This parameter name is reserved by MCP to allow clients and servers to attach ad"\
+                            ditional metadata to their notifications.",
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "PromptMessage": {
+            "description": Describes a message returned as part of a prompt.\n\nThis is similar to `Samplin"\
+            gMessage`, but also supports the embedding of\nresources from the MCP server.",
+            "properties": {
+                "content": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/definitions/TextContent"
+                        },
+                        {
+                            "$ref": "#/definitions/ImageContent"
+                        },
+                        {
+                            "$ref": "#/definitions/AudioContent"
+                        },
+                        {
+                            "$ref": "#/definitions/EmbeddedResource"
+                        }
+                    ]
+                },
+                "role": {
+                    "$ref": "#/definitions/Role"
+                }
+            },
+            "required": [
+                "content",
+                "role"
+            ],
+            "type": "object"
+        },
+        "PromptReference": {
+            "description": "Identifies a prompt.",
+            "properties": {
+                "name": {
+                    "description": "The name of the prompt or prompt template",
+                    "type": "string"
+                },
+                "type": {
+                    "const": "ref/prompt",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "type"
+            ],
+            "type": "object"
+        },
+        "ReadResourceRequest": {
+            "description": "Sent from the client to the server, to read a specific resource URI.",
+            "properties": {
+                "method": {
+                    "const": "resources/read",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "uri": {
+                            "description": The URI of the resource to read. The URI can use any protocol; it is up to the s"\
+                            erver how to interpret it.",
+                            "format": "uri",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "uri"
+                    ],
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method",
+                "params"
+            ],
+            "type": "object"
+        },
+        "ReadResourceResult": {
+            "description": "The server's response to a resources/read request from the client.",
+            "properties": {
+                "_meta": {
+                    "additionalProperties": {},
+                    "description": This result property is reserved by the protocol to allow clients and servers to"\
+                     attach additional metadata to their responses.",
+                    "type": "object"
+                },
+                "contents": {`````
 
-... (文件太大，已截断)
-`````
-
+## codex-rs/mcp-types/schema/2025-03-26/schema.json - 第 3/3 部分 (行 1601-2292)
+`````javascript                    "items": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/definitions/TextResourceContents"
+                            },
+                            {
+                                "$ref": "#/definitions/BlobResourceContents"
+                            }
+                        ]
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "contents"
+            ],
+            "type": "object"
+        },
+        "Request": {
+            "properties": {
+                "method": {
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "properties": {
+                                "progressToken": {
+                                    "$ref": "#/definitions/ProgressToken",
+                                    "description": If specified, the caller is requesting out-of-band progress notifications for th"\
+                                    is request (as represented by notifications/progress). The value of this paramet"\
+                                    er is an opaque token that will be attached to any subsequent notifications. The"\
+                                     receiver is not obligated to provide these notifications."
+                                }
+                            },
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "RequestId": {
+            "description": "A uniquely identifying ID for a request in JSON-RPC.",
+            "type": [
+                "string",
+                "integer"
+            ]
+        },
+        "Resource": {
+            "description": "A known resource that the server is capable of reading.",
+            "properties": {
+                "annotations": {
+                    "$ref": "#/definitions/Annotations",
+                    "description": "Optional annotations for the client."
+                },
+                "description": {
+                    "description": "A description of what this resource represents.\n\nThis can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a \"hint\" to the model.",
+                    "type": "string"
+                },
+                "mimeType": {
+                    "description": "The MIME type of this resource, if known.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "A human-readable name for this resource.\n\nThis can be used by clients to populate UI elements.",
+                    "type": "string"
+                },
+                "size": {
+                    "description": The size of the raw resource content, in bytes (i.e., before base64 encoding or "\
+                    any tokenization), if known.\n\nThis can be used by Hosts to display file sizes "\
+                    and estimate context window usage.",
+                    "type": "integer"
+                },
+                "uri": {
+                    "description": "The URI of this resource.",
+                    "format": "uri",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "uri"
+            ],
+            "type": "object"
+        },
+        "ResourceContents": {
+            "description": "The contents of a specific resource or sub-resource.",
+            "properties": {
+                "mimeType": {
+                    "description": "The MIME type of this resource, if known.",
+                    "type": "string"
+                },
+                "uri": {
+                    "description": "The URI of this resource.",
+                    "format": "uri",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "uri"
+            ],
+            "type": "object"
+        },
+        "ResourceListChangedNotification": {
+            "description": An optional notification from the server to the client, informing it that the li"\
+            st of resources it can read from has changed. This may be issued by servers with"\
+            out any previous subscription from the client.",
+            "properties": {
+                "method": {
+                    "const": "notifications/resources/list_changed",
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "additionalProperties": {},
+                            "description": This parameter name is reserved by MCP to allow clients and servers to attach ad"\
+                            ditional metadata to their notifications.",
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "ResourceReference": {
+            "description": "A reference to a resource or resource template definition.",
+            "properties": {
+                "type": {
+                    "const": "ref/resource",
+                    "type": "string"
+                },
+                "uri": {
+                    "description": "The URI or URI template of the resource.",
+                    "format": "uri-template",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "type",
+                "uri"
+            ],
+            "type": "object"
+        },
+        "ResourceTemplate": {
+            "description": "A template description for resources available on the server.",
+            "properties": {
+                "annotations": {
+                    "$ref": "#/definitions/Annotations",
+                    "description": "Optional annotations for the client."
+                },
+                "description": {
+                    "description": "A description of what this template is for.\n\nThis can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a \"hint\" to the model.",
+                    "type": "string"
+                },
+                "mimeType": {
+                    "description": The MIME type for all resources that match this template. This should only be in"\
+                    cluded if all resources matching this template have the same type.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": A human-readable name for the type of resource this template refers to.\n\nThis "\
+                    can be used by clients to populate UI elements.",
+                    "type": "string"
+                },
+                "uriTemplate": {
+                    "description": "A URI template (according to RFC 6570) that can be used to construct resource URIs.",
+                    "format": "uri-template",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "uriTemplate"
+            ],
+            "type": "object"
+        },
+        "ResourceUpdatedNotification": {
+            "description": A notification from the server to the client, informing it that a resource has c"\
+            hanged and may need to be read again. This should only be sent if the client pre"\
+            viously sent a resources/subscribe request.",
+            "properties": {
+                "method": {
+                    "const": "notifications/resources/updated",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "uri": {
+                            "description": The URI of the resource that has been updated. This might be a sub-resource of t"\
+                            he one that the client actually subscribed to.",
+                            "format": "uri",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "uri"
+                    ],
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method",
+                "params"
+            ],
+            "type": "object"
+        },
+        "Result": {
+            "additionalProperties": {},
+            "properties": {
+                "_meta": {
+                    "additionalProperties": {},
+                    "description": This result property is reserved by the protocol to allow clients and servers to"\
+                     attach additional metadata to their responses.",
+                    "type": "object"
+                }
+            },
+            "type": "object"
+        },
+        "Role": {
+            "description": "The sender or recipient of messages and data in a conversation.",
+            "enum": [
+                "assistant",
+                "user"
+            ],
+            "type": "string"
+        },
+        "Root": {
+            "description": "Represents a root directory or file that the server can operate on.",
+            "properties": {
+                "name": {
+                    "description": An optional name for the root. This can be used to provide a human-readable\nide"\
+                    ntifier for the root, which may be useful for display purposes or for\nreferenci"\
+                    ng the root in other parts of the application.",
+                    "type": "string"
+                },
+                "uri": {
+                    "description": The URI identifying the root. This *must* start with file:// for now.\nThis rest"\
+                    riction may be relaxed in future versions of the protocol to allow\nother URI sc"\
+                    hemes.",
+                    "format": "uri",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "uri"
+            ],
+            "type": "object"
+        },
+        "RootsListChangedNotification": {
+            "description": A notification from the client to the server, informing it that the list of root"\
+            s has changed.\nThis notification should be sent whenever the client adds, remov"\
+            es, or modifies any root.\nThe server should then request an updated list of roo"\
+            ts using the ListRootsRequest.",
+            "properties": {
+                "method": {
+                    "const": "notifications/roots/list_changed",
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "additionalProperties": {},
+                            "description": This parameter name is reserved by MCP to allow clients and servers to attach ad"\
+                            ditional metadata to their notifications.",
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "SamplingMessage": {
+            "description": "Describes a message issued to or received from an LLM API.",
+            "properties": {
+                "content": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/definitions/TextContent"
+                        },
+                        {
+                            "$ref": "#/definitions/ImageContent"
+                        },
+                        {
+                            "$ref": "#/definitions/AudioContent"
+                        }
+                    ]
+                },
+                "role": {
+                    "$ref": "#/definitions/Role"
+                }
+            },
+            "required": [
+                "content",
+                "role"
+            ],
+            "type": "object"
+        },
+        "ServerCapabilities": {
+            "description": Capabilities that a server may support. Known capabilities are defined here, in "\
+            this schema, but this is not a closed set: any server can define its own, additi"\
+            onal capabilities.",
+            "properties": {
+                "completions": {
+                    "additionalProperties": true,
+                    "description": "Present if the server supports argument autocompletion suggestions.",
+                    "properties": {},
+                    "type": "object"
+                },
+                "experimental": {
+                    "additionalProperties": {
+                        "additionalProperties": true,
+                        "properties": {},
+                        "type": "object"
+                    },
+                    "description": "Experimental, non-standard capabilities that the server supports.",
+                    "type": "object"
+                },
+                "logging": {
+                    "additionalProperties": true,
+                    "description": "Present if the server supports sending log messages to the client.",
+                    "properties": {},
+                    "type": "object"
+                },
+                "prompts": {
+                    "description": "Present if the server offers any prompt templates.",
+                    "properties": {
+                        "listChanged": {
+                            "description": "Whether this server supports notifications for changes to the prompt list.",
+                            "type": "boolean"
+                        }
+                    },
+                    "type": "object"
+                },
+                "resources": {
+                    "description": "Present if the server offers any resources to read.",
+                    "properties": {
+                        "listChanged": {
+                            "description": "Whether this server supports notifications for changes to the resource list.",
+                            "type": "boolean"
+                        },
+                        "subscribe": {
+                            "description": "Whether this server supports subscribing to resource updates.",
+                            "type": "boolean"
+                        }
+                    },
+                    "type": "object"
+                },
+                "tools": {
+                    "description": "Present if the server offers any tools to call.",
+                    "properties": {
+                        "listChanged": {
+                            "description": "Whether this server supports notifications for changes to the tool list.",
+                            "type": "boolean"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "type": "object"
+        },
+        "ServerNotification": {
+            "anyOf": [
+                {
+                    "$ref": "#/definitions/CancelledNotification"
+                },
+                {
+                    "$ref": "#/definitions/ProgressNotification"
+                },
+                {
+                    "$ref": "#/definitions/ResourceListChangedNotification"
+                },
+                {
+                    "$ref": "#/definitions/ResourceUpdatedNotification"
+                },
+                {
+                    "$ref": "#/definitions/PromptListChangedNotification"
+                },
+                {
+                    "$ref": "#/definitions/ToolListChangedNotification"
+                },
+                {
+                    "$ref": "#/definitions/LoggingMessageNotification"
+                }
+            ]
+        },
+        "ServerRequest": {
+            "anyOf": [
+                {
+                    "$ref": "#/definitions/PingRequest"
+                },
+                {
+                    "$ref": "#/definitions/CreateMessageRequest"
+                },
+                {
+                    "$ref": "#/definitions/ListRootsRequest"
+                }
+            ]
+        },
+        "ServerResult": {
+            "anyOf": [
+                {
+                    "$ref": "#/definitions/Result"
+                },
+                {
+                    "$ref": "#/definitions/InitializeResult"
+                },
+                {
+                    "$ref": "#/definitions/ListResourcesResult"
+                },
+                {
+                    "$ref": "#/definitions/ListResourceTemplatesResult"
+                },
+                {
+                    "$ref": "#/definitions/ReadResourceResult"
+                },
+                {
+                    "$ref": "#/definitions/ListPromptsResult"
+                },
+                {
+                    "$ref": "#/definitions/GetPromptResult"
+                },
+                {
+                    "$ref": "#/definitions/ListToolsResult"
+                },
+                {
+                    "$ref": "#/definitions/CallToolResult"
+                },
+                {
+                    "$ref": "#/definitions/CompleteResult"
+                }
+            ]
+        },
+        "SetLevelRequest": {
+            "description": "A request from the client to the server, to enable or adjust logging.",
+            "properties": {
+                "method": {
+                    "const": "logging/setLevel",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "level": {
+                            "$ref": "#/definitions/LoggingLevel",
+                            "description": The level of logging that the client wants to receive from the server. The serve"\
+                            r should send all logs at this level and higher (i.e., more severe) to the clien"\
+                            t as notifications/message."
+                        }
+                    },
+                    "required": [
+                        "level"
+                    ],
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method",
+                "params"
+            ],
+            "type": "object"
+        },
+        "SubscribeRequest": {
+            "description": Sent from the client to request resources/updated notifications from the server "\
+            whenever a particular resource changes.",
+            "properties": {
+                "method": {
+                    "const": "resources/subscribe",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "uri": {
+                            "description": The URI of the resource to subscribe to. The URI can use any protocol; it is up "\
+                            to the server how to interpret it.",
+                            "format": "uri",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "uri"
+                    ],
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method",
+                "params"
+            ],
+            "type": "object"
+        },
+        "TextContent": {
+            "description": "Text provided to or from an LLM.",
+            "properties": {
+                "annotations": {
+                    "$ref": "#/definitions/Annotations",
+                    "description": "Optional annotations for the client."
+                },
+                "text": {
+                    "description": "The text content of the message.",
+                    "type": "string"
+                },
+                "type": {
+                    "const": "text",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "text",
+                "type"
+            ],
+            "type": "object"
+        },
+        "TextResourceContents": {
+            "properties": {
+                "mimeType": {
+                    "description": "The MIME type of this resource, if known.",
+                    "type": "string"
+                },
+                "text": {
+                    "description": The text of the item. This must only be set if the item can actually be represen"\
+                    ted as text (not binary data).",
+                    "type": "string"
+                },
+                "uri": {
+                    "description": "The URI of this resource.",
+                    "format": "uri",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "text",
+                "uri"
+            ],
+            "type": "object"
+        },
+        "Tool": {
+            "description": "Definition for a tool the client can call.",
+            "properties": {
+                "annotations": {
+                    "$ref": "#/definitions/ToolAnnotations",
+                    "description": "Optional additional tool information."
+                },
+                "description": {
+                    "description": "A human-readable description of the tool.\n\nThis can be used by clients to improve the LLM's understanding of available tools. It can be thought of like a \"hint\" to the model.",
+                    "type": "string"
+                },
+                "inputSchema": {
+                    "description": "A JSON Schema object defining the expected parameters for the tool.",
+                    "properties": {
+                        "properties": {
+                            "additionalProperties": {
+                                "additionalProperties": true,
+                                "properties": {},
+                                "type": "object"
+                            },
+                            "type": "object"
+                        },
+                        "required": {
+                            "items": {
+                                "type": "string"
+                            },
+                            "type": "array"
+                        },
+                        "type": {
+                            "const": "object",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "type"
+                    ],
+                    "type": "object"
+                },
+                "name": {
+                    "description": "The name of the tool.",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "inputSchema",
+                "name"
+            ],
+            "type": "object"
+        },
+        "ToolAnnotations": {
+            "description": Additional properties describing a Tool to clients.\n\nNOTE: all properties in T"\
+            oolAnnotations are **hints**.\nThey are not guaranteed to provide a faithful des"\
+            cription of\ntool behavior (including descriptive properties like `title`).\n\nC"\
+            lients should never make tool use decisions based on ToolAnnotations\nreceived f"\
+            rom untrusted servers.",
+            "properties": {
+                "destructiveHint": {
+                    "description": If true, the tool may perform destructive updates to its environment.\nIf false,"\
+                     the tool performs only additive updates.\n\n(This property is meaningful only w"\
+                    hen `readOnlyHint == false`)\n\nDefault: true",
+                    "type": "boolean"
+                },
+                "idempotentHint": {
+                    "description": If true, calling the tool repeatedly with the same arguments\nwill have no addit"\
+                    ional effect on the its environment.\n\n(This property is meaningful only when `"\
+                    readOnlyHint == false`)\n\nDefault: false",
+                    "type": "boolean"
+                },
+                "openWorldHint": {
+                    "description": "If true, this tool may interact with an \"open world\" of external\nentities. If false, the tools domain of interaction is closed.\nFor example, the world of a web search tool '\
+                    is open, whereas that\nof a memory tool is not.\n\nDefault: true',
+                    "type": "boolean"
+                },
+                "readOnlyHint": {
+                    "description": "If true, the tool does not modify its environment.\n\nDefault: false",
+                    "type": "boolean"
+                },
+                "title": {
+                    "description": "A human-readable title for the tool.",
+                    "type": "string"
+                }
+            },
+            "type": "object"
+        },
+        "ToolListChangedNotification": {
+            "description": An optional notification from the server to the client, informing it that the li"\
+            st of tools it offers has changed. This may be issued by servers without any pre"\
+            vious subscription from the client.",
+            "properties": {
+                "method": {
+                    "const": "notifications/tools/list_changed",
+                    "type": "string"
+                },
+                "params": {
+                    "additionalProperties": {},
+                    "properties": {
+                        "_meta": {
+                            "additionalProperties": {},
+                            "description": This parameter name is reserved by MCP to allow clients and servers to attach ad"\
+                            ditional metadata to their notifications.",
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method"
+            ],
+            "type": "object"
+        },
+        "UnsubscribeRequest": {
+            "description": Sent from the client to request cancellation of resources/updated notifications "\
+            from the server. This should follow a previous resources/subscribe request.",
+            "properties": {
+                "method": {
+                    "const": "resources/unsubscribe",
+                    "type": "string"
+                },
+                "params": {
+                    "properties": {
+                        "uri": {
+                            "description": "The URI of the resource to unsubscribe from.",
+                            "format": "uri",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "uri"
+                    ],
+                    "type": "object"
+                }
+            },
+            "required": [
+                "method",
+                "params"
+            ],
+            "type": "object"
+        }
+    }
+}`````
 
 
 # codex-rs/mcp-types/src/lib.rs
+> 注意：此文件包含 1432 行，已分为 2 个部分显示
 
-`````rust
-// @generated
+## codex-rs/mcp-types/src/lib.rs - 第 1/2 部分 (行 1-800)
+`````rust// @generated
 // DO NOT EDIT THIS FILE DIRECTLY.
 // Run the following in the crate root to regenerate this file:
 //
@@ -49606,8 +52738,10 @@ pub struct PaginatedRequestParams {
 pub struct PaginatedResult {
     #[serde(
         rename = "nextCursor",
-        default,
-        skip_serializing_if = "Option::is_none"
+        default,`````
+
+## codex-rs/mcp-types/src/lib.rs - 第 2/2 部分 (行 801-1432)
+`````rust        skip_serializing_if = "Option::is_none"
     )]
     pub next_cursor: Option<String>,
 }
@@ -49807,10 +52941,438 @@ pub struct ResourceTemplate {
     pub description: Option<String>,
     #[serde(rename = "mimeType", default,
     skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    pub name: String,
+    #[serde(rename = "uriTemplate")]
+    pub uri_template: String,
+}
 
-... (文件太大，已截断)
-`````
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum ResourceUpdatedNotification {}
 
+impl ModelContextProtocolNotification for ResourceUpdatedNotification {
+    const METHOD: &'static str = "notifications/resources/updated";
+    type Params = ResourceUpdatedNotificationParams;
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ResourceUpdatedNotificationParams {
+    pub uri: String,
+}
+
+pub type Result = serde_json::Value;
+
+/// The sender or recipient of messages and data in a conversation.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum Role {
+    #[serde(rename = "assistant")]
+    Assistant,
+    #[serde(rename = "user")]
+    User,
+}
+
+/// Represents a root directory or file that the server can operate on.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Root {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum RootsListChangedNotification {}
+
+impl ModelContextProtocolNotification for RootsListChangedNotification {
+    const METHOD: &'static str = "notifications/roots/list_changed";
+    type Params = Option<serde_json::Value>;
+}
+
+/// Describes a message issued to or received from an LLM API.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct SamplingMessage {
+    pub content: SamplingMessageContent,
+    pub role: Role,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum SamplingMessageContent {
+    TextContent(TextContent),
+    ImageContent(ImageContent),
+    AudioContent(AudioContent),
+}
+
+/// Capabilities that a server may support. Known capabilities are defined here, in this schema, but this is not a closed set: any server can define its own, additional capabilities.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ServerCapabilities {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completions: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experimental: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logging: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<ServerCapabilitiesPrompts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<ServerCapabilitiesResources>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<ServerCapabilitiesTools>,
+}
+
+/// Present if the server offers any tools to call.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ServerCapabilitiesTools {
+    #[serde(
+        rename = "listChanged",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub list_changed: Option<bool>,
+}
+
+/// Present if the server offers any resources to read.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ServerCapabilitiesResources {
+    #[serde(
+        rename = "listChanged",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub list_changed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscribe: Option<bool>,
+}
+
+/// Present if the server offers any prompt templates.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ServerCapabilitiesPrompts {
+    #[serde(
+        rename = "listChanged",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub list_changed: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(tag = "method", content = "params")]
+pub enum ServerNotification {
+    #[serde(rename = "notifications/cancelled")]
+    CancelledNotification(<CancelledNotification as ModelContextProtocolNotification>::Params),
+    #[serde(rename = "notifications/progress")]
+    ProgressNotification(<ProgressNotification as ModelContextProtocolNotification>::Params),
+    #[serde(rename = "notifications/resources/list_changed")]
+    ResourceListChangedNotification(
+        <ResourceListChangedNotification as ModelContextProtocolNotification>::Params,
+    ),
+    #[serde(rename = "notifications/resources/updated")]
+    ResourceUpdatedNotification(
+        <ResourceUpdatedNotification as ModelContextProtocolNotification>::Params,
+    ),
+    #[serde(rename = "notifications/prompts/list_changed")]
+    PromptListChangedNotification(
+        <PromptListChangedNotification as ModelContextProtocolNotification>::Params,
+    ),
+    #[serde(rename = "notifications/tools/list_changed")]
+    ToolListChangedNotification(
+        <ToolListChangedNotification as ModelContextProtocolNotification>::Params,
+    ),
+    #[serde(rename = "notifications/message")]
+    LoggingMessageNotification(
+        <LoggingMessageNotification as ModelContextProtocolNotification>::Params,
+    ),
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum ServerRequest {
+    PingRequest(PingRequest),
+    CreateMessageRequest(CreateMessageRequest),
+    ListRootsRequest(ListRootsRequest),
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
+pub enum ServerResult {
+    Result(Result),
+    InitializeResult(InitializeResult),
+    ListResourcesResult(ListResourcesResult),
+    ListResourceTemplatesResult(ListResourceTemplatesResult),
+    ReadResourceResult(ReadResourceResult),
+    ListPromptsResult(ListPromptsResult),
+    GetPromptResult(GetPromptResult),
+    ListToolsResult(ListToolsResult),
+    CallToolResult(CallToolResult),
+    CompleteResult(CompleteResult),
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum SetLevelRequest {}
+
+impl ModelContextProtocolRequest for SetLevelRequest {
+    const METHOD: &'static str = "logging/setLevel";
+    type Params = SetLevelRequestParams;
+    type Result = Result;
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct SetLevelRequestParams {
+    pub level: LoggingLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum SubscribeRequest {}
+
+impl ModelContextProtocolRequest for SubscribeRequest {
+    const METHOD: &'static str = "resources/subscribe";
+    type Params = SubscribeRequestParams;
+    type Result = Result;
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct SubscribeRequestParams {
+    pub uri: String,
+}
+
+/// Text provided to or from an LLM.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct TextContent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Annotations>,
+    pub text: String,
+    pub r#type: String, // &'static str = "text"
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct TextResourceContents {
+    #[serde(rename = "mimeType", default,
+    skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    pub text: String,
+    pub uri: String,
+}
+
+/// Definition for a tool the client can call.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Tool {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<ToolAnnotations>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: ToolInputSchema,
+    pub name: String,
+}
+
+/// A JSON Schema object defining the expected parameters for the tool.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ToolInputSchema {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub properties: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<Vec<String>>,
+    pub r#type: String, // &'static str = "object"
+}
+
+/// Additional properties describing a Tool to clients.
+///
+/// NOTE: all properties in ToolAnnotations are **hints**.
+/// They are not guaranteed to provide a faithful description of
+/// tool behavior (including descriptive properties like `title`).
+///
+/// Clients should never make tool use decisions based on ToolAnnotations
+/// received from untrusted servers.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ToolAnnotations {
+    #[serde(
+        rename = "destructiveHint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub destructive_hint: Option<bool>,
+    #[serde(
+        rename = "idempotentHint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub idempotent_hint: Option<bool>,
+    #[serde(
+        rename = "openWorldHint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub open_world_hint: Option<bool>,
+    #[serde(
+        rename = "readOnlyHint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub read_only_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum ToolListChangedNotification {}
+
+impl ModelContextProtocolNotification for ToolListChangedNotification {
+    const METHOD: &'static str = "notifications/tools/list_changed";
+    type Params = Option<serde_json::Value>;
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum UnsubscribeRequest {}
+
+impl ModelContextProtocolRequest for UnsubscribeRequest {
+    const METHOD: &'static str = "resources/unsubscribe";
+    type Params = UnsubscribeRequestParams;
+    type Result = Result;
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct UnsubscribeRequestParams {
+    pub uri: String,
+}
+
+impl TryFrom<JSONRPCRequest> for ClientRequest {
+    type Error = serde_json::Error;
+    fn try_from(req: JSONRPCRequest) -> std::result::Result<Self, Self::Error> {
+        match req.method.as_str() {
+            "initialize" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <InitializeRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::InitializeRequest(params))
+            }
+            "ping" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <PingRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::PingRequest(params))
+            }
+            "resources/list" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <ListResourcesRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::ListResourcesRequest(params))
+            }
+            "resources/templates/list" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <ListResourceTemplatesRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::ListResourceTemplatesRequest(params))
+            }
+            "resources/read" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <ReadResourceRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::ReadResourceRequest(params))
+            }
+            "resources/subscribe" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <SubscribeRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::SubscribeRequest(params))
+            }
+            "resources/unsubscribe" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <UnsubscribeRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::UnsubscribeRequest(params))
+            }
+            "prompts/list" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <ListPromptsRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::ListPromptsRequest(params))
+            }
+            "prompts/get" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <GetPromptRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::GetPromptRequest(params))
+            }
+            "tools/list" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <ListToolsRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::ListToolsRequest(params))
+            }
+            "tools/call" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <CallToolRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::CallToolRequest(params))
+            }
+            "logging/setLevel" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <SetLevelRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::SetLevelRequest(params))
+            }
+            "completion/complete" => {
+                let params_json = req.params.unwrap_or(serde_json::Value::Null);
+                let params: <CompleteRequest as ModelContextProtocolRequest>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ClientRequest::CompleteRequest(params))
+            }
+            _ => Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unknown method: {}", req.method),
+            ))),
+        }
+    }
+}
+
+impl TryFrom<JSONRPCNotification> for ServerNotification {
+    type Error = serde_json::Error;
+    fn try_from(n: JSONRPCNotification) -> std::result::Result<Self, Self::Error> {
+        match n.method.as_str() {
+            "notifications/cancelled" => {
+                let params_json = n.params.unwrap_or(serde_json::Value::Null);
+                let params: <CancelledNotification as ModelContextProtocolNotification>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ServerNotification::CancelledNotification(params))
+            }
+            "notifications/progress" => {
+                let params_json = n.params.unwrap_or(serde_json::Value::Null);
+                let params: <ProgressNotification as ModelContextProtocolNotification>::Params =
+                    serde_json::from_value(params_json)?;
+                Ok(ServerNotification::ProgressNotification(params))
+            }
+            "notifications/resources/list_changed" => {
+                let params_json = n.params.unwrap_or(serde_json::Value::Null);
+                let params: <ResourceListChangedNotification as ModelContextProtocolNotification>::Params = serde_json::from_value(params_json)?;
+                Ok(ServerNotification::ResourceListChangedNotification(params))
+            }
+            "notifications/resources/updated" => {
+                let params_json = n.params.unwrap_or(serde_json::Value::Null);
+                let params: <ResourceUpdatedNotification as ModelContextProtocolNotification>::Params = serde_json::from_value(params_json)?;
+                Ok(ServerNotification::ResourceUpdatedNotification(params))
+            }
+            "notifications/prompts/list_changed" => {
+                let params_json = n.params.unwrap_or(serde_json::Value::Null);
+                let params: <PromptListChangedNotification as ModelContextProtocolNotification>::Params = serde_json::from_value(params_json)?;
+                Ok(ServerNotification::PromptListChangedNotification(params))
+            }
+            "notifications/tools/list_changed" => {
+                let params_json = n.params.unwrap_or(serde_json::Value::Null);
+                let params: <ToolListChangedNotification as ModelContextProtocolNotification>::Params = serde_json::from_value(params_json)?;
+                Ok(ServerNotification::ToolListChangedNotification(params))
+            }
+            "notifications/message" => {
+                let params_json = n.params.unwrap_or(serde_json::Value::Null);
+                let params: <LoggingMessageNotification as ModelContextProtocolNotification>::Params = serde_json::from_value(params_json)?;
+                Ok(ServerNotification::LoggingMessageNotification(params))
+            }
+            _ => Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unknown method: {}", n.method),
+            ))),
+        }
+    }
+}`````
 
 
 # codex-rs/mcp-types/tests/initialize.rs
