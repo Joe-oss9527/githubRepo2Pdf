@@ -146,7 +146,7 @@ else ifeq ($(UNAME_S),Linux)
 		sudo apt-get update && sudo apt-get install -y \
 			pandoc texlive-xetex texlive-fonts-recommended \
 			texlive-fonts-extra texlive-lang-chinese texlive-lang-greek \
-			python3-venv python3-pip libcairo2-dev inkscape \
+			python3-venv python3-pip libcairo2-dev inkscape librsvg2-bin \
 			fonts-noto-cjk fonts-wqy-microhei; \
 	else \
 		echo "请手动安装: pandoc texlive-xetex python3-venv cairo inkscape"; \
