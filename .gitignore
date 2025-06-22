@@ -17,3 +17,17 @@ repo-pdfs/
 
 .DS_Store
 debug.md
+
+# 测试相关
+.coverage
+htmlcov/
+.pytest_cache/
+coverage.xml
+*.egg-info/
+.tox/
+
+# 日志文件
+*.log
+
+# Temporary conversion files
+temp_conversion_files/

@@ -13,9 +13,17 @@ from bs4 import BeautifulSoup
 import hashlib
 import re
 import requests
+from urllib.parse import urlparse
+from tqdm import tqdm
 
-# 设置 Cairo 库路径
-os.environ['DYLD_LIBRARY_PATH'] = '/opt/homebrew/lib:' + os.environ.get('DYLD_LIBRARY_PATH', '')
+# 动态设置 Cairo 库路径（仅 macOS 需要）
+if os.uname().sysname == 'Darwin':
+    # 检查常见的 Homebrew 安装路径
+    homebrew_paths = ['/opt/homebrew/lib', '/usr/local/lib']
+    for path in homebrew_paths:
+        if os.path.exists(path):
+            os.environ['DYLD_LIBRARY_PATH'] = f"{path}:" + os.environ.get('DYLD_LIBRARY_PATH', '')
+            break
 
 # 获取主日志记录器
 logger = logging.getLogger(__name__)
@@ -24,6 +32,58 @@ logger = logging.getLogger(__name__)
 logging.getLogger('git').setLevel(logging.WARNING)
 logging.getLogger('git.cmd').setLevel(logging.WARNING)
 logging.getLogger('git.util').setLevel(logging.WARNING)
+
+def get_system_fonts():
+    """动态检测系统可用的字体"""
+    system = os.uname().sysname
+    
+    # 默认字体配置
+    default_fonts = {
+        'Darwin': {  # macOS
+            'main_font': 'Songti SC',
+            'sans_font': 'PingFang SC',
+            'mono_font': 'SF Mono',
+            'fallback_fonts': ['STSong', 'Hiragino Sans GB', 'Arial Unicode MS']
+        },
+        'Linux': {
+            'main_font': 'Noto Serif CJK SC',
+            'sans_font': 'Noto Sans CJK SC',
+            'mono_font': 'DejaVu Sans Mono',
+            'fallback_fonts': ['WenQuanYi Micro Hei', 'AR PL UMing CN', 'SimSun']
+        },
+        'Windows': {
+            'main_font': 'SimSun',
+            'sans_font': 'Microsoft YaHei',
+            'mono_font': 'Consolas',
+            'fallback_fonts': ['KaiTi', 'FangSong']
+        }
+    }
+    
+    fonts = default_fonts.get(system, default_fonts['Linux'])
+    
+    # 尝试检测实际可用的字体
+    try:
+        # 使用 fc-list 命令检测字体（Linux/macOS）
+        if system in ['Darwin', 'Linux']:
+            result = subprocess.run(['fc-list', ':lang=zh', 'family'], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                available_fonts = set(result.stdout.strip().split('\n'))
+                logger.debug(f"Available Chinese fonts: {available_fonts}")
+                
+                # 检查默认字体是否可用
+                for font_type in ['main_font', 'sans_font']:
+                    if fonts[font_type] not in available_fonts:
+                        # 尝试使用备选字体
+                        for fallback in fonts['fallback_fonts']:
+                            if fallback in available_fonts:
+                                fonts[font_type] = fallback
+                                logger.info(f"Using fallback font {fallback} for {font_type}")
+                                break
+    except Exception as e:
+        logger.debug(f"Could not detect system fonts: {e}")
+    
+    return fonts
 
 class GitRepoManager:
     def __init__(self, repo_url: str, branch: str = 'main'):
@@ -38,7 +98,23 @@ class GitRepoManager:
         
     def clone_or_pull(self, workspace_dir: Path) -> Path:
         """克隆或更新仓库"""
-        repo_name = self.repo_url.split('/')[-1].replace('.git', '')
+        # 使用 urlparse 安全解析 URL
+        parsed_url = urlparse(self.repo_url)
+        if parsed_url.scheme in ['http', 'https']:
+            # 处理 HTTP(S) URL
+            path_parts = parsed_url.path.strip('/').split('/')
+            if len(path_parts) >= 2:
+                repo_name = path_parts[-1].replace('.git', '')
+            else:
+                repo_name = 'unknown_repo'
+        elif '@' in self.repo_url and ':' in self.repo_url:
+            # 处理 SSH URL (git@github.com:user/repo.git)
+            repo_part = self.repo_url.split(':')[-1]
+            repo_name = repo_part.split('/')[-1].replace('.git', '')
+        else:
+            # 其他格式，使用原来的方法作为后备
+            repo_name = self.repo_url.split('/')[-1].replace('.git', '')
+        
         self.repo_dir = workspace_dir / repo_name
         
         try:
@@ -75,10 +151,15 @@ class GitRepoManager:
             raise
 
 class RepoPDFConverter:
-    def __init__(self, config_path: Path):
+    def __init__(self, config_path: Path, template_name: str = None):
         self.project_root = config_path.parent.absolute()
         self.config = self._load_config(config_path)
         self.temp_dir = None
+        self.template = None
+        
+        # 加载模板（如果指定）
+        if template_name:
+            self.template = self._load_template(template_name)
         
         # 确保所有路径都相对于项目根目录
         self.workspace_dir = self.project_root / self.config['workspace_dir']
@@ -140,19 +221,38 @@ class RepoPDFConverter:
         """加载配置文件"""
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
+    
+    def _load_template(self, template_name: str) -> dict:
+        """加载模板文件"""
+        template_path = self.project_root / 'templates' / f'{template_name}.yaml'
+        if not template_path.exists():
+            logger.warning(f"Template {template_name} not found, using default settings")
+            return None
+        
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template = yaml.safe_load(f)
+            logger.info(f"Loaded template: {template.get('name', template_name)}")
+            return template
             
     def create_temp_markdown(self):
         """创建临时目录并准备 Markdown 文件"""
-        # 在项目根目录下创建 temp 目录
-        self.temp_dir = self.project_root / 'temp'
+        # 在项目根目录下创建 temp_conversion_files 目录
+        self.temp_dir = self.project_root / 'temp_conversion_files'
         # 如果目录已存在，先清空它
         if self.temp_dir.exists():
             import shutil
             shutil.rmtree(self.temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         
+        # 创建 images 子目录
+        images_dir = self.temp_dir / "images"
+        images_dir.mkdir(exist_ok=True)
+        
         logger.info(f"Created temporary directory: {self.temp_dir}")
-        return self.temp_dir / "output.md"
+        temp_md = self.temp_dir / "combined_output.md"
+        # 创建空文件
+        temp_md.touch()
+        return temp_md
 
     def convert_svg_to_png(self, svg_content: str, output_path: Path) -> bool:
         """将 SVG 内容转换为 PNG 文件"""
@@ -505,6 +605,11 @@ class RepoPDFConverter:
         ext = file_path.suffix.lower()
         rel_path = file_path.relative_to(repo_root)
         
+        # 内置的忽略扩展名
+        ignored_extensions = {'.pyc', '.pyo', '.pyd', '.so', '.dylib', '.dll', '.class', '.o', '.obj'}
+        if ext in ignored_extensions:
+            return ""
+        
         # 添加对.cursorrules文件的特殊处理
         if file_path.name == '.cursorrules':
             # 检查文件大小
@@ -527,6 +632,11 @@ class RepoPDFConverter:
             return ""
             
         # 创建临时目录下的 images 目录
+        # 确保 temp_dir 存在
+        if not self.temp_dir:
+            self.temp_dir = self.project_root / "temp_conversion_files"
+            self.temp_dir.mkdir(exist_ok=True)
+            
         images_dir = self.temp_dir / "images"
         images_dir.mkdir(exist_ok=True)
             
@@ -549,8 +659,8 @@ class RepoPDFConverter:
         try:
             # 获取文件大小（MB）
             file_size = file_path.stat().st_size / (1024 * 1024)
-            # 如果文件大于 1MB，跳过
-            if file_size > 1 and ext not in self.image_extensions:
+            # 如果文件大于 0.5MB，跳过
+            if file_size > 0.5 and ext not in self.image_extensions:
                 logger.debug(f"跳过大文件 ({file_size:.1f}MB): {file_path}")
                 return ""
             
@@ -607,6 +717,9 @@ class RepoPDFConverter:
                 content = re.sub(r'!\[(.*?)\]\((.*?)\)', process_image_path, content)
                 cleaned_content = self.process_markdown(content)
                 
+                # 转义独立的 --- 行，避免被 pandoc 解释为 YAML 分隔符
+                cleaned_content = re.sub(r'^---$', '\\---', cleaned_content, flags=re.MULTILINE)
+                
                 # 如果是 MDX 文件，使用 MDX 语法高亮
                 if ext == '.mdx':
                     return f"\n\n# {rel_path}\n\n`````mdx\n{cleaned_content}\n`````\n\n"
@@ -626,14 +739,214 @@ class RepoPDFConverter:
                 lang = self.code_extensions[ext]
                 # 处理长字符串，将它们分割成多行
                 content = self._process_long_lines(content)
+                # 如果内容仍然过大，截断
+                lines = content.splitlines()
+                if len(lines) > 1000:
+                    content = '\n'.join(lines[:1000]) + '\n\n... (文件太大，已截断)'
                 return f"\n\n# {rel_path}\n\n`````{lang}\n{content}\n`````\n\n"
                 
             return ""
         except UnicodeDecodeError:
             logger.debug(f"跳过二进制文件: {file_path}")
             return ""
+    
+    def _process_long_lines(self, content: str, max_length: int = 80) -> str:
+        """处理长行，将它们分割成多行"""
+        lines = []
+        for line in content.splitlines():
+            if len(line) > max_length:
+                # 检查是否是数组
+                if '[' in line and ']' in line:
+                    # 在逗号后添加换行
+                    indent = ' ' * (len(line) - len(line.lstrip()))
+                    parts = line.split(',')
+                    formatted_parts = []
+                    current_line = parts[0]
+                    
+                    for part in parts[1:]:
+                        if len(current_line + ',' + part) > max_length:
+                            formatted_parts.append(current_line + ',')
+                            current_line = indent + part.lstrip()
+                        else:
+                            current_line += ',' + part
+                            
+                    formatted_parts.append(current_line)
+                    line = '\n'.join(formatted_parts)
+                # 对于包含长字符串的行进行特殊处理
+                elif '"' in line or "'" in line:
+                    line = self._break_long_strings(line)
+            lines.append(line)
+        return '\n'.join(lines)
+        
+    def _break_long_strings(self, line: str) -> str:
+        """处理包含长字符串的行"""
+        import re
+        # 查找长字符串（包括包名和版本号）
+        pattern = r'["\']([^"\']{100,})["\']'
+        
+        def replacer(match):
+            # 将长字符串每隔 80 个字符添加换行和适当的缩进
+            s = match.group(1)
+            indent = ' ' * (len(line) - len(line.lstrip()))
+            parts = [s[i:i+80] for i in range(0, len(s), 80)]
+            if len(parts) > 1:
+                quote = match.group(0)[0]  # 获取原始引号
+                return f'{quote}\\\n{indent}'.join(parts) + quote
+            return match.group(0)
             
-    def _process_long_lines(self, content: str, max_length: int = 100) -> str:
+        return re.sub(pattern, replacer, line)
+    
+    def generate_directory_tree(self, repo_path: Path, max_depth: int = 3) -> str:
+        """生成项目的目录树结构"""
+        
+        def should_ignore_dir(path: Path) -> bool:
+            """检查目录是否应该被忽略"""
+            dir_name = path.name
+            # 忽略隐藏目录和配置中指定的目录
+            if dir_name.startswith('.'):
+                return True
+            for ignore in self.config.get('ignores', []):
+                if ignore.rstrip('/') == dir_name or ignore in str(path):
+                    return True
+            return False
+        
+        def build_tree(current_path: Path, prefix: str = "", depth: int = 0) -> list:
+            """递归构建目录树"""
+            if depth > max_depth:
+                return []
+            
+            items = []
+            try:
+                # 获取所有子项并排序（目录在前，文件在后）
+                entries = sorted(current_path.iterdir(), 
+                               key=lambda x: (not x.is_dir(), x.name.lower()))
+                
+                for i, entry in enumerate(entries):
+                    is_last = i == len(entries) - 1
+                    
+                    # 跳过隐藏文件/目录（除了特定的如 .cursorrules）
+                    if entry.name.startswith('.') and entry.name not in ['.cursorrules', '.gitignore']:
+                        continue
+                    
+                    # 构建树形符号
+                    if is_last:
+                        current_prefix = "└── "
+                        extension = "    "
+                    else:
+                        current_prefix = "├── "
+                        extension = "│   "
+                    
+                    if entry.is_dir():
+                        if not should_ignore_dir(entry):
+                            items.append(f"{prefix}{current_prefix}{entry.name}/")
+                            # 递归处理子目录
+                            sub_items = build_tree(entry, prefix + extension, depth + 1)
+                            items.extend(sub_items)
+                    else:
+                        # 检查文件是否应该被忽略
+                        if not self._should_ignore(entry):
+                            # 获取文件大小
+                            size = entry.stat().st_size
+                            if size < 1024:
+                                size_str = f"{size}B"
+                            elif size < 1024 * 1024:
+                                size_str = f"{size/1024:.1f}KB"
+                            else:
+                                size_str = f"{size/(1024*1024):.1f}MB"
+                            
+                            items.append(f"{prefix}{current_prefix}{entry.name} ({size_str})")
+                            
+            except PermissionError:
+                items.append(f"{prefix}[Permission Denied]")
+            
+            return items
+        
+        # 生成目录树
+        tree_lines = [f"# 项目结构\n\n```"]
+        tree_lines.append(f"{repo_path.name}/")
+        tree_lines.extend(build_tree(repo_path))
+        tree_lines.append("```\n")
+        
+        return "\n".join(tree_lines)
+    
+    def _should_ignore(self, file_path: Path) -> bool:
+        """检查文件是否应该被忽略"""
+        # 检查文件名和扩展名
+        for ignore in self.config.get('ignores', []):
+            if ignore in str(file_path) or file_path.name == ignore:
+                return True
+            # 处理通配符模式
+            if '*' in ignore:
+                import fnmatch
+                if fnmatch.fnmatch(file_path.name, ignore):
+                    return True
+        return False
+    
+    def generate_code_stats(self, repo_path: Path) -> str:
+        """生成代码统计信息"""
+        stats = {
+            'total_files': 0,
+            'total_lines': 0,
+            'total_size': 0,
+            'by_language': {},
+            'by_extension': {}
+        }
+        
+        # 收集统计信息
+        for file_path in repo_path.rglob('*'):
+            if file_path.is_file() and not self._should_ignore(file_path):
+                stats['total_files'] += 1
+                size = file_path.stat().st_size
+                stats['total_size'] += size
+                
+                # 统计扩展名
+                ext = file_path.suffix.lower()
+                if ext:
+                    stats['by_extension'][ext] = stats['by_extension'].get(ext, 0) + 1
+                    
+                    # 统计语言
+                    if ext in self.code_extensions:
+                        lang = self.code_extensions[ext]
+                        if lang not in stats['by_language']:
+                            stats['by_language'][lang] = {'files': 0, 'lines': 0}
+                        stats['by_language'][lang]['files'] += 1
+                        
+                        # 统计行数（仅代码文件）
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                lines = len(f.readlines())
+                                stats['total_lines'] += lines
+                                stats['by_language'][lang]['lines'] += lines
+                        except:
+                            pass
+        
+        # 生成统计报告
+        report = ["# 代码统计\n"]
+        report.append(f"- 总文件数：{stats['total_files']:,}")
+        report.append(f"- 总代码行数：{stats['total_lines']:,}")
+        report.append(f"- 总大小：{stats['total_size']/(1024*1024):.2f} MB\n")
+        
+        if stats['by_language']:
+            report.append("## 按语言统计\n")
+            report.append("| 语言 | 文件数 | 代码行数 |")
+            report.append("|------|--------|----------|")
+            for lang, data in sorted(stats['by_language'].items(), 
+                                   key=lambda x: x[1]['lines'], reverse=True):
+                report.append(f"| {lang} | {data['files']} | {data['lines']:,} |")
+            report.append("")
+        
+        if stats['by_extension']:
+            report.append("## 按文件类型统计\n")
+            report.append("| 扩展名 | 文件数 |")
+            report.append("|--------|--------|")
+            for ext, count in sorted(stats['by_extension'].items(), 
+                                   key=lambda x: x[1], reverse=True)[:20]:
+                report.append(f"| {ext} | {count} |")
+            report.append("")
+        
+        return "\n".join(report)
+            
+    def _process_long_lines(self, content: str, max_length: int = 80) -> str:
         """处理长行，将它们分割成多行"""
         lines = []
         for line in content.splitlines():
@@ -681,7 +994,22 @@ class RepoPDFConverter:
 
     def create_pandoc_yaml(self, repo_name: str) -> Path:
         """创建 Pandoc 的 YAML 配置文件"""
+        # 确保 temp_dir 已经创建
+        if not self.temp_dir:
+            self.temp_dir = self.project_root / "temp_conversion_files"
+            self.temp_dir.mkdir(exist_ok=True)
+            
         pdf_config = self.config.get('pdf_settings', {})
+        
+        # 创建一个更简单的 pandoc defaults 文件，避免复杂的 header-includes
+        
+        # 获取系统字体
+        system_fonts = get_system_fonts()
+        
+        # 优先使用配置文件中的字体，如果没有则使用系统检测的字体
+        main_font = pdf_config.get('main_font', system_fonts['main_font'])
+        sans_font = pdf_config.get('sans_font', system_fonts['sans_font'])
+        mono_font = pdf_config.get('mono_font', system_fonts['mono_font'])
         
         yaml_config = {
             'pdf-engine': 'xelatex',
@@ -691,17 +1019,12 @@ class RepoPDFConverter:
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
                 # 中文正文字体
-                'CJKmainfont': 'Songti SC',
-                'CJKsansfont': 'PingFang SC',
-                'CJKmonofont': 'STFangsong',
+                'CJKmainfont': main_font,
+                'CJKsansfont': sans_font,
+                'CJKmonofont': main_font,  # 使用主字体作为等宽中文字体
                 # 等宽字体（代码）
-                'monofont': pdf_config.get('mono_font', 'SF Mono'),
-                'monofontoptions': [
-                    'Scale=0.85',
-                    'BoldFont=SF Mono Bold',
-                    'ItalicFont=SF Mono Regular Italic',
-                    'BoldItalicFont=SF Mono Bold Italic'
-                ],
+                'monofont': mono_font,
+                'monofontoptions': ['Scale=0.85'],
                 'colorlinks': True,
                 'linkcolor': 'blue',
                 'urlcolor': 'blue',
@@ -722,22 +1045,14 @@ class RepoPDFConverter:
                     '\\AtBeginDocument{\\justifying}',
                     # 添加listings包和创建Shaded环境（而不是重新定义）
                     '\\usepackage{listings}',
-                    # PDF 元数据设置
-                    '\\hypersetup{',
-                    f'    pdftitle={{{repo_name} 代码文档}},',
-                    f'    pdfauthor={{{pdf_config.get("metadata", {}).get("author", "Repo-to-PDF Generator")}}},',
-                    f'    pdfcreator={{{pdf_config.get("metadata", {}).get("creator", "LaTeX")}}},',
-                    f'    pdfproducer={{{pdf_config.get("metadata", {}).get("producer", "XeLaTeX")}}},',
-                    '    colorlinks=true,',
-                    '    linkcolor=blue,',
-                    '    urlcolor=blue',
-                    '}',
+                    # PDF 元数据设置 - 合并为单个字符串以避免YAML解析错误
+                    f'\\hypersetup{{pdftitle={{{repo_name} 代码文档}}, pdfauthor={{Repo-to-PDF Generator}}, colorlinks=true, linkcolor=blue, urlcolor=blue}}',
                     # 字体设置
                     '\\defaultfontfeatures{Mapping=tex-text}',  # 启用 TeX 连字
-                    # 中文字体设置
-                    '\\setCJKmainfont[BoldFont={Songti SC Bold},ItalicFont={Songti SC Light}]{Songti SC}',
-                    '\\setCJKsansfont[BoldFont={PingFang SC Semibold},ItalicFont={PingFang SC Light}]{PingFang SC}',
-                    '\\setCJKmonofont{STFangsong}',
+                    # 中文字体设置（使用检测到的字体）
+                    f'\\setCJKmainfont{{{main_font}}}',
+                    f'\\setCJKsansfont{{{sans_font}}}',
+                    f'\\setCJKmonofont{{{main_font}}}',
                     # 中文断行设置
                     '\\XeTeXlinebreaklocale "zh"',
                     '\\XeTeXlinebreakskip = 0pt plus 1pt',
@@ -758,9 +1073,68 @@ class RepoPDFConverter:
             }
         }
         
-        yaml_path = Path(self.temp_dir) / "pandoc.yaml"
+        yaml_path = Path(self.temp_dir) / "pandoc_defaults.yaml"
+        
+        # 先创建 header includes 文件
+        header_tex_path = Path(self.temp_dir) / "header.tex"
+        header_content = f"""\\usepackage{{fontspec}}
+\\usepackage{{xunicode}}
+\\usepackage{{xeCJK}}
+\\usepackage{{fvextra}}
+\\usepackage[most]{{tcolorbox}}
+\\usepackage{{graphicx}}
+\\usepackage{{float}}
+\\usepackage{{sectsty}}
+\\usepackage{{hyperref}}
+\\usepackage{{longtable}}
+\\usepackage{{ragged2e}}
+\\AtBeginDocument{{\\justifying}}
+\\usepackage{{listings}}
+\\hypersetup{{pdftitle={{{repo_name} 代码文档}}, pdfauthor={{Repo-to-PDF Generator}}, colorlinks=true, linkcolor=blue, urlcolor=blue}}
+\\defaultfontfeatures{{Mapping=tex-text}}
+\\setCJKmainfont{{{main_font}}}
+\\setCJKsansfont{{{sans_font}}}
+\\setCJKmonofont{{{main_font}}}
+\\XeTeXlinebreaklocale "zh"
+\\XeTeXlinebreakskip = 0pt plus 1pt
+\\allsectionsfont{{\\CJKfamily{{sf}}}}
+\\DeclareGraphicsExtensions{{.png,.jpg,.jpeg,.gif}}
+\\graphicspath{{{{./images/}}}}
+\\usepackage{{adjustbox}}
+\\setkeys{{Gin}}{{width=0.8\\linewidth,keepaspectratio}}
+\\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}}}
+\\fvset{{breaklines=true, breakanywhere=true, breakafter=\\\\}}
+\\renewenvironment{{Shaded}}{{\\begin{{tcolorbox}}[breakable,boxrule=0pt,frame hidden,sharp corners]}}{{\\end{{tcolorbox}}}}
+"""
+        
+        with open(header_tex_path, 'w', encoding='utf-8') as f:
+            f.write(header_content)
+        
+        # 创建 pandoc defaults 文件
+        yaml_content = f"""# Pandoc defaults file
+pdf-engine: xelatex
+from: markdown+fenced_code_attributes+fenced_code_blocks+backtick_code_blocks
+highlight-style: {pdf_config.get('highlight_style', 'tango')}
+
+include-in-header:
+  - {header_tex_path}
+
+variables:
+  documentclass: article
+  geometry: {pdf_config.get('margin', 'margin=1in')}
+  CJKmainfont: "{main_font}"
+  CJKsansfont: "{sans_font}"
+  CJKmonofont: "{main_font}"
+  monofont: "{mono_font}"
+  monofontoptions: 
+    - Scale=0.85
+  colorlinks: true
+  linkcolor: blue
+  urlcolor: blue
+"""
+        
         with open(yaml_path, 'w', encoding='utf-8') as f:
-            yaml.dump(yaml_config, f, allow_unicode=True)
+            f.write(yaml_content)
         
         return yaml_path
 
@@ -778,7 +1152,6 @@ class RepoPDFConverter:
             
             # 创建临时文件
             temp_md = self.create_temp_markdown()
-            yaml_path = self.create_pandoc_yaml(repo_path.name)
             
             # 生成输出路径（已经是相对于项目根目录）
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -786,29 +1159,137 @@ class RepoPDFConverter:
             
             # 收集并处理所有文件
             with open(temp_md, 'w', encoding='utf-8') as out_file:
-                # 写入标题
-                out_file.write(f"---\ntitle: {repo_path.name} 代码文档\ndate: \\today\n---\n\n")
+                # 写入标题 (移除 YAML 前置内容，通过命令行传递)
+                out_file.write(f"# {repo_path.name} 代码文档\n\n")
                 
-                # 处理所有文件
+                # 根据模板生成内容
+                if self.template and self.template.get('structure'):
+                    structure = self.template['structure']
+                    
+                    # 处理模板中的各个部分
+                    for section in structure.get('sections', []):
+                        if section.get('type') == 'tree' and structure.get('include_tree', True):
+                            logger.info("Generating directory tree...")
+                            tree_depth = structure.get('tree_max_depth', 3)
+                            directory_tree = self.generate_directory_tree(repo_path, tree_depth)
+                            out_file.write(directory_tree)
+                            out_file.write("\n\n")
+                        elif section.get('type') == 'stats' and structure.get('include_stats', True):
+                            logger.info("Generating code statistics...")
+                            stats = self.generate_code_stats(repo_path)
+                            out_file.write(stats)
+                            out_file.write("\n\n")
+                        elif section.get('content'):
+                            # 替换模板变量
+                            content = section['content']
+                            content = content.replace('{{repo_name}}', repo_path.name)
+                            content = content.replace('{{date}}', datetime.now().strftime('%Y-%m-%d'))
+                            out_file.write(content)
+                            out_file.write("\n\n")
+                else:
+                    # 使用默认结构
+                    logger.info("Generating directory tree...")
+                    directory_tree = self.generate_directory_tree(repo_path)
+                    out_file.write(directory_tree)
+                    out_file.write("\n\n")
+                
+                # 收集所有需要处理的文件
+                all_files = []
                 for file_path in sorted(repo_path.rglob('*')):
                     # 允许处理特定的以点开头的文件，如 .cursorrules
                     if file_path.is_file() and (file_path.name == '.cursorrules' or not any(part.startswith('.') for part in file_path.parts)):
+                        all_files.append(file_path)
+                
+                # 使用进度条处理所有文件
+                logger.info(f"Processing {len(all_files)} files...")
+                for file_path in tqdm(all_files, desc="Processing files", unit="file", disable=logger.level > logging.INFO):
+                    try:
                         content = self.process_file(file_path, repo_path)
                         if content:
                             out_file.write(content)
+                            out_file.flush()  # 立即刷新到磁盘，避免内存堆积
+                    except Exception as e:
+                        logger.warning(f"Failed to process {file_path}: {e}")
+                        # 继续处理其他文件
+            
+            # 获取系统字体
+            pdf_config = self.config.get('pdf_settings', {})
+            system_fonts = get_system_fonts()
+            main_font = pdf_config.get('main_font', system_fonts['main_font'])
+            sans_font = pdf_config.get('sans_font', system_fonts['sans_font'])
+            mono_font = pdf_config.get('mono_font', system_fonts['mono_font'])
+            
+            # 创建 header.tex 文件
+            header_tex_path = self.temp_dir / "header.tex"
+            header_content = f"""% 设置字体
+\\usepackage{{fontspec}}
+\\usepackage{{xeCJK}}
+\\setCJKmainfont{{{main_font}}}
+\\setCJKsansfont{{{sans_font}}}
+\\setCJKmonofont{{{main_font}}}
+\\setmonofont{{{mono_font}}}
+
+% 中文支持
+\\XeTeXlinebreaklocale "zh"
+\\XeTeXlinebreakskip = 0pt plus 1pt
+
+% 代码高亮
+\\usepackage{{fvextra}}
+\\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}, fontsize=\\small}}
+\\fvset{{breaklines=true, breakanywhere=true, fontsize=\\small}}
+
+% 防止 Dimension too large 错误
+\\maxdeadcycles=200
+\\emergencystretch=5em
+\\usepackage{{etoolbox}}
+\\makeatletter
+\\patchcmd{{\\@verbatim}}
+  {{\\verbatim@font}}
+  {{\\verbatim@font\\small}}
+  {{}}{{}}
+\\makeatother
+
+% 页面设置
+\\usepackage{{graphicx}}
+\\DeclareGraphicsExtensions{{.png,.jpg,.jpeg,.gif}}
+\\graphicspath{{{{./images/}}}}
+
+% 超链接
+\\usepackage{{hyperref}}
+\\hypersetup{{
+    pdftitle={{{repo_path.name} 代码文档}},
+    pdfauthor={{Repo-to-PDF Generator}},
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue
+}}
+"""
+            
+            with open(header_tex_path, 'w', encoding='utf-8') as f:
+                f.write(header_content)
             
             # 调用 pandoc 进行转换，添加更多选项
             cmd = [
                 'pandoc',
-                '-f', 'markdown+pipe_tables+grid_tables+table_captions+yaml_metadata_block+smart+fenced_code_blocks+fenced_code_attributes+backtick_code_blocks+inline_code_attributes+line_blocks+fancy_lists+definition_lists+example_lists+task_lists+citations+footnotes+smart+superscript+subscript+raw_html+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash+raw_tex+implicit_figures+link_attributes+bracketed_spans+native_divs+native_spans+raw_attribute+header_attributes+auto_identifiers+pandoc_title_block+mmd_title_block+autolink_bare_uris+emoji+hard_line_breaks+escaped_line_breaks+blank_before_blockquote+blank_before_header+space_in_atx_header+strikeout+east_asian_line_breaks',  # 添加所有有用的扩展特性
+                '-f', 'markdown+pipe_tables+grid_tables+table_captions+smart+fenced_code_blocks+fenced_code_attributes+backtick_code_blocks+inline_code_attributes+line_blocks+fancy_lists+definition_lists+example_lists+task_lists+citations+footnotes+smart+superscript+subscript+raw_html+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash+raw_tex+implicit_figures+link_attributes+bracketed_spans+native_divs+native_spans+raw_attribute+header_attributes+auto_identifiers+autolink_bare_uris+emoji+hard_line_breaks+escaped_line_breaks+blank_before_blockquote+blank_before_header+space_in_atx_header+strikeout+east_asian_line_breaks',  # 移除 yaml_metadata_block 避免解析错误
                 '--pdf-engine=xelatex',
                 '--wrap=none',
                 '--toc',
                 '--toc-depth=2',
-                '--defaults', str(yaml_path),
                 '--highlight-style=tango',  # 显式指定代码高亮样式
+                '-V', 'documentclass=article',
+                '-V', f'title={repo_path.name} 代码文档',
+                '-V', 'date=\\today',
                 '-V', 'geometry:margin=0.5in',
                 '-V', 'fontsize=10pt',
+                '-V', f'CJKmainfont={main_font}',
+                '-V', f'CJKsansfont={sans_font}',
+                '-V', f'CJKmonofont={main_font}',
+                '-V', f'monofont={mono_font}',
+                '-V', 'colorlinks=true',
+                '-V', 'linkcolor=blue',
+                '-V', 'urlcolor=blue',
+                '-H', str(header_tex_path),  # 使用 -H 选项包含 header 文件
                 '--resource-path=' + str(self.temp_dir),
                 '--standalone',
                 # 输出设置
@@ -825,7 +1306,7 @@ class RepoPDFConverter:
             logger.info("Converting to PDF...")
             logger.info(f"Running command: {' '.join(cmd)}")  # 打印完整命令便于调试
             
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=str(self.project_root))
             
             if result.returncode != 0:
                 logger.error(f"Pandoc stderr: {result.stderr}")
@@ -858,6 +1339,8 @@ def main():
                       help='Enable verbose output (DEBUG level)')
     parser.add_argument('-q', '--quiet', action='store_true',
                       help='Only show warnings and errors')
+    parser.add_argument('-t', '--template', type=str, default=None,
+                      help='Template name to use (e.g., default, technical)')
     
     args = parser.parse_args()
     
@@ -885,7 +1368,7 @@ def main():
     # 设置其他模块的日志级别
     logging.getLogger('MARKDOWN').setLevel(git_level)
     
-    converter = RepoPDFConverter(args.config)
+    converter = RepoPDFConverter(args.config, args.template)
     converter.convert()
 
 if __name__ == '__main__':

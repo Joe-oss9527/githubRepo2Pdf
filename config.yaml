@@ -1,6 +1,6 @@
 # 仓库配置
 repository:
-  url: "https://github.com/redwoodjs/sdk.git"
+  url: "https://github.com/openai/codex.git"
   branch: "main"
 
 # 所有路径都相对于项目根目录
@@ -10,8 +10,8 @@ output_dir: "./repo-pdfs"
 # PDF 设置
 pdf_settings:
   margin: "margin=1in"
-  main_font: "Songti SC"
-  mono_font: "SF Mono"
+  main_font: "Noto Serif CJK SC"
+  mono_font: "DejaVu Sans Mono"
   highlight_style: "monochrome"
   metadata:
     author: "Repo-to-PDF Generator"

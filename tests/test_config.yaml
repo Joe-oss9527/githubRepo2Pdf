@@ -1,0 +1,20 @@
+# Test configuration for unit tests
+repository:
+  url: "https://github.com/test/test-repo.git"
+  branch: "main"
+
+workspace_dir: "./test-workspace"
+output_dir: "./test-output"
+
+pdf_settings:
+  margin: "margin=1in"
+  main_font: "Test Font"
+  mono_font: "Test Mono"
+  highlight_style: "monochrome"
+
+ignores:
+  - "node_modules"
+  - "*.pyc"
+  - "__pycache__"
+  - ".git"
+  - "*.log"

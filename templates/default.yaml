@@ -1,0 +1,42 @@
+# 默认模板配置
+name: "默认模板"
+description: "标准的代码文档模板"
+
+# 文档结构
+structure:
+  # 是否生成目录树
+  include_tree: true
+  tree_max_depth: 3
+  
+  # 是否生成统计信息
+  include_stats: true
+  
+  # 文件组织方式: "directory" (按目录) 或 "type" (按文件类型)
+  organization: "directory"
+  
+  # 章节顺序
+  sections:
+    - title: "项目概览"
+      content: |
+        本文档包含了 {{repo_name}} 项目的完整源代码。
+        生成时间：{{date}}
+        
+    - title: "项目结构"
+      type: "tree"
+      
+    - title: "代码统计"
+      type: "stats"
+      
+    - title: "源代码"
+      type: "files"
+
+# PDF 样式覆盖
+pdf_overrides:
+  highlight_style: "tango"
+  geometry: "margin=0.8in"
+  fontsize: "10pt"
+  
+# 文件过滤规则（追加到默认规则）
+additional_ignores:
+  - "*.min.js"
+  - "*.min.css"

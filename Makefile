@@ -1,37 +1,30 @@
-# 操作系统检测
-UNAME_S := $(shell uname -s)
-
-# 颜色定义
-BLUE := \033[1;34m
-GREEN := \033[0;32m
-RED := \033[0;31m
-YELLOW := \033[1;33m
-NC := \033[0m
-
-# Python 相关变量
+# ========== 配置部分 ==========
 PYTHON ?= python3
-VENV := venv
+VENV ?= venv
+CONFIG ?= config.yaml
+TEMPLATE ?=
+VERBOSE ?= 0
+QUIET ?= 0
+
+# 目录配置
+WORKSPACE_DIR ?= repo-workspace
+PDF_DIR ?= repo-pdfs
+TEMP_DIR ?= temp
+TEMPLATE_DIR ?= templates
+
+# 系统检测
+UNAME_S := $(shell uname -s)
+IS_WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1 || echo 0)
+
+# Python 虚拟环境
 VENV_BIN := $(VENV)/bin
 VENV_PYTHON := $(VENV_BIN)/python
 VENV_PIP := $(VENV_BIN)/pip
 
-# 配置文件
-CONFIG := config.yaml
-
-# 目录
-TEMP_DIR := temp
-WORKSPACE_DIR := repo-workspace
-PDF_DIR := repo-pdfs
-
-# 依赖文件
-REQUIREMENTS := requirements.txt
-
-# 检查必要的命令
+# 必要的命令
 REQUIRED_CMDS := python3 git xelatex pandoc
 
-# 运行参数
-VERBOSE ?= 0
-QUIET ?= 0
+# 转换参数
 CONVERT_ARGS := -c $(CONFIG)
 ifeq ($(VERBOSE),1)
     CONVERT_ARGS += -v
@@ -39,106 +32,178 @@ endif
 ifeq ($(QUIET),1)
     CONVERT_ARGS += -q
 endif
+ifneq ($(TEMPLATE),)
+    CONVERT_ARGS += -t $(TEMPLATE)
+endif
 
-# 声明所有伪目标
-.PHONY: all deps convert clean clean-all help check-reqs install-deps create-venv debug
+# ========== 目标定义 ==========
+.PHONY: all help deps setup convert test clean clean-all install-deps \
+        quickstart list-templates check-config test-unit test-integration test-coverage
 
 # 默认目标
-all: check-reqs deps convert
+all: convert
 
-# 调试模式
-debug: VERBOSE=1
-debug: all
+# 帮助信息
+help:
+	@echo "GitHub Repo to PDF - 将代码仓库转换为 PDF 文档"
+	@echo ""
+	@echo "快速开始:"
+	@echo "  make quickstart         # 创建示例配置文件"
+	@echo "  make                    # 转换为 PDF"
+	@echo "  make TEMPLATE=technical # 使用模板"
+	@echo ""
+	@echo "常用命令:"
+	@echo "  make setup              # 安装依赖"
+	@echo "  make convert            # 转换为 PDF"
+	@echo "  make test               # 运行测试"
+	@echo "  make clean              # 清理临时文件"
+	@echo "  make clean-all          # 清理所有文件"
+	@echo ""
+	@echo "配置选项:"
+	@echo "  CONFIG=file             # 指定配置文件"
+	@echo "  TEMPLATE=name           # 使用模板"
+	@echo "  VERBOSE=1               # 详细输出"
+	@echo "  QUIET=1                 # 静默模式"
 
-# 检查必要的命令是否存在
-check-reqs:
-	@echo "$(BLUE)==> 检查必要的命令...$(NC)"
-	@for cmd in $(REQUIRED_CMDS); do \
+# 快速开始
+quickstart:
+	@if [ ! -f $(CONFIG) ]; then \
+		echo "创建示例配置文件..."; \
+		echo '# 仓库配置\nrepository:\n  url: "https://github.com/用户名/仓库名.git"\n  branch: "main"\n\nworkspace_dir: "./repo-workspace"\noutput_dir: "./repo-pdfs"\n\nignores:\n  - "node_modules"\n  - ".git"' > $(CONFIG); \
+		echo "✓ 已创建 $(CONFIG)"; \
+		echo "! 请编辑 $(CONFIG) 中的仓库地址"; \
+	else \
+		echo "✓ 配置文件已存在: $(CONFIG)"; \
+	fi
+
+# 列出模板
+list-templates:
+	@echo "可用的模板:"
+	@if [ -d $(TEMPLATE_DIR) ]; then \
+		for template in $(TEMPLATE_DIR)/*.yaml; do \
+			if [ -f "$$template" ]; then \
+				name=$$(basename $$template .yaml); \
+				desc=$$(grep -m1 "description:" $$template 2>/dev/null | sed 's/.*description: *"\(.*\)"/\1/' || echo ""); \
+				echo "  $$name - $$desc"; \
+			fi \
+		done; \
+	else \
+		echo "  (模板目录不存在)"; \
+	fi
+
+# 检查配置
+check-config:
+	@echo "当前配置:"
+	@echo "  配置文件: $(CONFIG)"
+	@echo "  模板: $(if $(TEMPLATE),$(TEMPLATE),无)"
+	@echo "  Python: $(PYTHON)"
+	@echo "  虚拟环境: $(VENV)"
+	@echo "  输出目录: $(PDF_DIR)"
+	@echo "  操作系统: $(UNAME_S)$(if $(filter 1,$(IS_WSL)), (WSL2),)"
+
+# 安装依赖
+deps: check-deps $(VENV)/deps-installed
+
+setup: deps
+
+# 检查系统命令
+check-deps:
+	@echo "检查必要的命令..."
+	@missing=""; \
+	for cmd in $(REQUIRED_CMDS); do \
 		if ! command -v $$cmd >/dev/null 2>&1; then \
-			echo "$(RED)错误: 未找到命令 '$$cmd'$(NC)"; \
-			exit 1; \
-		fi \
-	done
-	@echo "$(GREEN)所有必要的命令都已安装$(NC)"
-
-# 创建虚拟环境和安装依赖
-deps: check-reqs install-deps create-venv
+			missing="$$missing $$cmd"; \
+		fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "✗ 缺少以下命令:$$missing"; \
+		echo "  请运行 'make install-deps' 安装"; \
+		exit 1; \
+	fi; \
+	echo "✓ 所有必要的命令都已安装"
 
 # 安装系统依赖
 install-deps:
-	@echo "$(BLUE)==> 检查系统依赖...$(NC)"
+	@echo "安装系统依赖..."
 ifeq ($(UNAME_S),Darwin)
-	@if ! command -v brew >/dev/null 2>&1; then \
-		echo "$(YELLOW)正在安装 Homebrew...$(NC)"; \
+	@# macOS
+	@command -v brew >/dev/null 2>&1 || { \
+		echo "安装 Homebrew..."; \
 		/bin/bash -c "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
-	fi
-	@if ! command -v inkscape >/dev/null 2>&1; then \
-		echo "$(YELLOW)正在安装 Inkscape...$(NC)"; \
-		brew install inkscape; \
-	fi
-	@if ! brew list cairo >/dev/null 2>&1; then \
-		echo "$(YELLOW)正在安装 Cairo...$(NC)"; \
-		brew install cairo; \
-	fi
-	@if ! command -v pandoc >/dev/null 2>&1; then \
-		echo "$(YELLOW)正在安装 Pandoc...$(NC)"; \
-		brew install pandoc; \
-	fi
-	@if ! command -v xelatex >/dev/null 2>&1; then \
-		echo "$(YELLOW)正在安装 MacTeX...$(NC)"; \
-		brew install --cask mactex-no-gui; \
-	fi
+	}
+	@for pkg in pandoc cairo; do \
+		brew list $$pkg >/dev/null 2>&1 || brew install $$pkg; \
+	done
+	@command -v inkscape >/dev/null 2>&1 || brew install inkscape
+	@command -v xelatex >/dev/null 2>&1 || brew install --cask mactex-no-gui
 else ifeq ($(UNAME_S),Linux)
-	@echo "$(YELLOW)请确保已安装必要的系统依赖：$(NC)"
-	@echo "sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-fonts-extra python3-venv python3-pip cairo-dev inkscape texlive-lang-chinese"
+	@# Linux/WSL2
+	@if [ "$(IS_WSL)" = "1" ]; then \
+		echo "检测到 WSL2 环境"; \
+	fi
+	@if command -v apt-get >/dev/null 2>&1; then \
+		echo "使用 apt-get 安装依赖..."; \
+		sudo apt-get update && sudo apt-get install -y \
+			pandoc texlive-xetex texlive-fonts-recommended \
+			texlive-fonts-extra texlive-lang-chinese \
+			python3-venv python3-pip libcairo2-dev inkscape \
+			fonts-noto-cjk fonts-wqy-microhei; \
+	else \
+		echo "请手动安装: pandoc texlive-xetex python3-venv cairo inkscape"; \
+	fi
 endif
 
-# 创建并更新虚拟环境
-create-venv: $(VENV)/deps-installed
-
-$(VENV)/deps-installed: $(REQUIREMENTS)
-	@echo "$(BLUE)==> 创建 Python 虚拟环境...$(NC)"
+# Python 虚拟环境
+$(VENV)/deps-installed: requirements.txt
+	@echo "设置 Python 环境..."
 	@test -d $(VENV) || $(PYTHON) -m venv $(VENV)
-	@echo "$(BLUE)==> 安装 Python 依赖...$(NC)"
-	@$(VENV_PIP) install --upgrade pip
-	@$(VENV_PIP) install -r $(REQUIREMENTS)
-	@touch $(VENV)/deps-installed
+	@$(VENV_PIP) install --quiet --upgrade pip
+	@$(VENV_PIP) install --quiet -r requirements.txt
+	@touch $@
+	@echo "✓ Python 依赖安装完成"
 
 # 转换为 PDF
 convert: deps
-	@echo "$(BLUE)==> 开始转换...$(NC)"
+	@echo "开始转换 PDF..."
 	@if [ ! -f $(CONFIG) ]; then \
-		echo "$(RED)错误: 找不到配置文件 $(CONFIG)$(NC)"; \
+		echo "✗ 找不到配置文件: $(CONFIG)"; \
 		exit 1; \
 	fi
 	@$(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
 
-# 清理临时文件
+# 测试
+test: deps
+	@echo "运行所有测试..."
+	@$(VENV_PYTHON) -m pytest
+
+test-unit: deps
+	@echo "运行单元测试..."
+	@$(VENV_PYTHON) -m pytest tests/test_repo_to_pdf.py -v
+
+test-integration: deps
+	@echo "运行集成测试..."
+	@$(VENV_PYTHON) -m pytest tests/test_integration.py -v
+
+test-coverage: deps
+	@echo "生成测试覆盖率报告..."
+	@$(VENV_PYTHON) -m pytest --cov=repo_to_pdf --cov-report=html --cov-report=term
+
+# 清理
 clean:
-	@echo "$(BLUE)==> 清理临时文件...$(NC)"
-	@rm -rf $(TEMP_DIR)
+	@echo "清理临时文件..."
+	@rm -rf $(TEMP_DIR) temp_conversion_files
 	@rm -rf $(WORKSPACE_DIR)
 	@rm -f debug.md
-	@echo "$(GREEN)清理完成$(NC)"
+	@find . -name "*.pyc" -delete 2>/dev/null || true
+	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+	@echo "✓ 清理完成"
 
-# 清理所有文件（包括 PDF）
 clean-all: clean
-	@echo "$(BLUE)==> 清理所有文件...$(NC)"
+	@echo "清理所有生成文件..."
 	@rm -rf $(PDF_DIR)
 	@rm -rf $(VENV)
-	@echo "$(GREEN)全部清理完成$(NC)"
+	@echo "✓ 全部清理完成"
 
-# 帮助信息
-help:
-	@echo "$(BLUE)可用的命令：$(NC)"
-	@echo "  $(GREEN)make$(NC)          - 安装依赖并转换为 PDF"
-	@echo "  $(GREEN)make deps$(NC)     - 安装所需的依赖"
-	@echo "  $(GREEN)make convert$(NC)  - 仅执行转换"
-	@echo "  $(GREEN)make debug$(NC)    - 以调试模式运行（显示详细日志）"
-	@echo "  $(GREEN)make clean$(NC)    - 清理临时文件"
-	@echo "  $(GREEN)make clean-all$(NC)- 清理所有文件（包括 PDF）"
-	@echo "  $(GREEN)make help$(NC)     - 显示此帮助信息"
-	@echo
-	@echo "$(BLUE)运行参数：$(NC)"
-	@echo "  $(GREEN)VERBOSE=1$(NC)     - 启用详细输出"
-	@echo "  $(GREEN)QUIET=1$(NC)       - 只显示警告和错误" 
+# 调试模式
+debug: VERBOSE=1
+debug: convert

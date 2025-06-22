@@ -1,0 +1,57 @@
+# 技术文档模板
+name: "技术文档"
+description: "适合技术文档和API文档"
+
+structure:
+  include_tree: true
+  tree_max_depth: 4
+  include_stats: true
+  organization: "type"  # 按文件类型组织
+  
+  sections:
+    - title: "技术文档"
+      content: |
+        # {{repo_name}} 技术文档
+        
+        生成日期：{{date}}
+        
+        ## 文档说明
+        
+        本文档包含项目的完整技术实现细节。
+        
+    - title: "项目架构"
+      type: "tree"
+      
+    - title: "代码统计"
+      type: "stats"
+      
+    - title: "配置文件"
+      type: "files"
+      filter: ["*.yaml", "*.yml", "*.json", "*.toml", "*.ini", "*.env"]
+      
+    - title: "源代码 - 后端"
+      type: "files"
+      filter: ["*.py", "*.java", "*.go", "*.rs", "*.cpp", "*.c"]
+      
+    - title: "源代码 - 前端"
+      type: "files"
+      filter: ["*.js", "*.ts", "*.jsx", "*.tsx", "*.vue", "*.svelte"]
+      
+    - title: "样式表"
+      type: "files"
+      filter: ["*.css", "*.scss", "*.less"]
+      
+    - title: "文档"
+      type: "files"
+      filter: ["*.md", "*.mdx", "*.rst", "*.txt"]
+
+pdf_overrides:
+  highlight_style: "monochrome"
+  geometry: "margin=0.6in"
+  fontsize: "9pt"
+  
+additional_ignores:
+  - "*.min.js"
+  - "*.min.css"
+  - "dist/"
+  - "build/"

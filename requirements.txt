@@ -5,4 +5,11 @@ beautifulsoup4==4.12.3
 cairosvg>=2.7.1
 svglib>=1.5.1
 reportlab>=4.0.9
-requests>=2.31.0 
+requests>=2.31.0
+tqdm>=4.66.0
+
+# Testing dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+coverage>=7.3.0 

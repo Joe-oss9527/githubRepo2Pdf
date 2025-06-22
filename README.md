@@ -5,12 +5,18 @@
 ## 功能特点
 
 - 支持多种编程语言的语法高亮
-- 自动生成目录
-- 支持中文显示
+- 自动生成目录树和代码统计
+- 支持中文显示（跨平台字体自动检测）
 - 可配置的文件过滤
 - 自动处理大文件和长行
 - 优雅的代码块展示
 - 智能的日志输出控制
+- 进度条显示
+- 流式处理，避免内存溢出
+- 错误恢复机制
+- 自定义模板系统
+- 完整的单元测试和集成测试
+- 80%+ 测试覆盖率
 
 ## 系统要求
 
@@ -81,9 +87,73 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
 
    # 清理所有文件（包括生成的 PDF）
    make clean-all
+   
+   # 使用自定义模板
+   TEMPLATE=technical make
    ```
 
 生成的 PDF 文件将保存在 `repo-pdfs` 目录下。
+
+## 模板系统
+
+工具提供了灵活的模板系统，可以自定义 PDF 的结构和样式：
+
+1. **使用内置模板**
+   ```bash
+   # 使用技术文档模板
+   TEMPLATE=technical make
+   
+   # 使用默认模板
+   TEMPLATE=default make
+   ```
+
+2. **创建自定义模板**
+   在 `templates/` 目录下创建 YAML 文件，例如 `custom.yaml`：
+   ```yaml
+   name: "自定义模板"
+   structure:
+     include_tree: true
+     include_stats: true
+     sections:
+       - title: "项目概览"
+         content: |
+           # {{repo_name}}
+           生成时间：{{date}}
+   ```
+
+3. **可用的模板变量**
+   - `{{repo_name}}` - 仓库名称
+   - `{{date}}` - 生成日期
+
+## 测试
+
+项目包含完整的测试套件，确保代码质量和稳定性：
+
+### 运行测试
+
+```bash
+# 运行所有测试
+make test
+
+# 运行单元测试
+make test-unit
+
+# 运行集成测试  
+make test-integration
+
+# 生成测试覆盖率报告
+make test-coverage
+
+# 使用测试脚本
+./run_tests.sh
+```
+
+### 测试覆盖
+
+- 单元测试覆盖核心功能模块
+- 集成测试验证完整转换流程
+- 测试覆盖率目标：80%+
+- 支持 CI/CD 自动化测试
 
 ## 日志级别控制
 
