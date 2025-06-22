@@ -76,6 +76,9 @@ make test-coverage
    - Syntax highlighting for 30+ programming languages
    - Progress bar integration with tqdm
    - Stream processing to avoid memory issues
+   - `_process_large_file()`: Intelligent file splitting for files over 1000 lines
+   - `_process_long_lines()`: Line breaking for lines over 80 characters
+   - `_break_long_strings()`: Smart string breaking for long literals
 
 2. **Makefile**: Comprehensive build automation:
    - OS detection (macOS/Linux) with automatic dependency installation
@@ -115,6 +118,7 @@ make test-coverage
 - **Logging**: Three-tier logging system (normal, verbose, quiet) controlled via make parameters
 - **YAML Handling**: Custom YAML dumper class for proper backslash escaping, separate header.tex file approach
 - **Markdown Processing**: Escapes "---" lines to prevent YAML delimiter confusion, removes yaml_metadata_block from pandoc format
+- **Pandoc Configuration**: Disables raw_tex extension to prevent backslash interpretation issues in code blocks
 
 ## Important Paths
 
@@ -151,6 +155,17 @@ make test-coverage
 - pytest-mock>=3.11.0 (mocking support)
 - coverage>=7.3.0 (code coverage)
 
+## Quick Troubleshooting Guide
+
+| Error | Solution |
+|-------|----------|
+| Font not found | Update config.yaml with system-appropriate fonts or install missing fonts |
+| YAML parse exception | Check temp_conversion_files/header.tex was created properly |
+| Undefined control sequence | Ensure pandoc is using `-raw_tex` flag |
+| Dimension too large | Check if files over 1000 lines are being split properly |
+| puenc-greek.def not found | Install texlive-lang-greek package |
+| File too large | Reduce file size limit in code or enable split_large_files |
+
 ## Common Development Tasks
 
 ### Adding New Language Support
@@ -162,9 +177,10 @@ Edit the `ignores` section in config.yaml or add patterns to `RepoPDFConverter._
 ### Changing PDF Output Settings
 Modify `pdf_settings` in config.yaml:
 - `margin`: Page margins
-- `main_font`: Primary font (default: "Songti SC" for Chinese)
-- `mono_font`: Code font (default: "SF Mono")
+- `main_font`: Primary font (default: "Songti SC" for Chinese on macOS, "Noto Serif CJK SC" on Linux)
+- `mono_font`: Code font (default: "SF Mono" on macOS, "DejaVu Sans Mono" on Linux)
 - `highlight_style`: Pandoc highlight theme
+- `split_large_files`: Whether to split large files into parts (default: true)
 
 ### Debugging Conversion Issues
 1. Run with `make debug` to see detailed logs
