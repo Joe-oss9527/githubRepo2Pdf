@@ -128,7 +128,8 @@ make test-coverage
 ### System Requirements
 - Python 3.6+
 - pandoc
-- XeLaTeX (via MacTeX on macOS)
+- XeLaTeX (via MacTeX on macOS, texlive-xetex on Linux)
+- texlive-lang-greek (required for proper Greek character support in LaTeX)
 - Cairo library
 - Inkscape (optional, for SVG conversion)
 - Git
@@ -174,7 +175,10 @@ Modify `pdf_settings` in config.yaml:
      - macOS defaults: "Songti SC" (main), "SF Mono" (mono)
      - Linux/WSL defaults: "Noto Serif CJK SC" (main), "DejaVu Sans Mono" (mono)
      - The tool automatically detects the OS and suggests appropriate fonts
-   - LaTeX errors: Check for special characters in code
+   - **LaTeX errors**: Check for special characters in code
+     - "File 'puenc-greek.def' not found" error: Install `texlive-lang-greek` package
+     - On Ubuntu/Debian: `sudo apt-get install texlive-lang-greek`
+     - This package is required for proper Greek character support in LaTeX documents
    - Memory issues: Reduce file size limit or add more ignore patterns
    - **YAML parsing errors with pandoc**: When pandoc fails with YAML parse exceptions, the issue is often related to how pandoc defaults files handle LaTeX commands. Solutions implemented:
      - Moved from inline `header-includes` in YAML to separate `header.tex` file using `include-in-header`
