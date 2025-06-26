@@ -682,7 +682,12 @@ class RepoPDFConverter:
                 # 处理图片路径
                 def process_image_path(match):
                     img_path = match.group(2)
-                    if not img_path.startswith(('http://', 'https://', '/')):
+                    if not img_path.startswith(('http://', 'https://')):
+                        # 处理绝对路径（以 / 开头）
+                        if img_path.startswith('/'):
+                            # 去掉开头的斜杠，作为相对于仓库根目录的路径
+                            img_path = img_path.lstrip('/')
+                        
                         # 尝试多种路径解析方式
                         possible_paths = [
                             # 1. 从当前文件目录解析

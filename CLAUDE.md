@@ -218,3 +218,7 @@ Modify `pdf_settings` in config.yaml:
      - Code blocks must have newlines after the opening marker: `` `````python\n``
      - Code blocks must have newlines before the closing marker: ``\n````` ``
      - This ensures pandoc correctly applies syntax highlighting to each part
+   - **Absolute path images in Markdown**: When Markdown files contain images with absolute paths (starting with `/`), these are treated as relative to the repository root:
+     - Example: `![](/docs/assets/image.png)` is resolved as `{repo_root}/docs/assets/image.png`
+     - The leading slash is stripped and the path is resolved relative to the repository root
+     - This fix ensures compatibility with documentation that uses absolute paths for images
