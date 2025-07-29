@@ -36,9 +36,15 @@ ifneq ($(TEMPLATE),)
     CONVERT_ARGS += -t $(TEMPLATE)
 endif
 
+# 设备预设支持
+ifneq ($(DEVICE),)
+    export DEVICE
+endif
+
 # ========== 目标定义 ==========
 .PHONY: all help deps setup convert test clean clean-all install-deps \
-        quickstart list-templates check-config test-unit test-integration test-coverage
+        quickstart list-templates check-config test-unit test-integration test-coverage \
+        kindle kindle7 tablet mobile desktop
 
 # 默认目标
 all: convert
@@ -62,8 +68,15 @@ help:
 	@echo "配置选项:"
 	@echo "  CONFIG=file             # 指定配置文件"
 	@echo "  TEMPLATE=name           # 使用模板"
+	@echo "  DEVICE=preset           # 使用设备预设"
 	@echo "  VERBOSE=1               # 详细输出"
 	@echo "  QUIET=1                 # 静默模式"
+	@echo ""
+	@echo "设备预设:"
+	@echo "  make kindle             # 7英寸Kindle优化"
+	@echo "  make tablet             # 平板设备优化"
+	@echo "  make mobile             # 手机设备优化"
+	@echo "  make desktop            # 桌面端优化(默认)"
 
 # 快速开始
 quickstart:
@@ -170,6 +183,47 @@ convert: deps
 		exit 1; \
 	fi
 	@$(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+
+# ========== 设备预设快捷命令 ==========
+
+# Kindle 7英寸设备优化
+kindle: kindle7
+kindle7: deps
+	@echo "使用Kindle 7英寸设备预设转换PDF..."
+	@if [ ! -f $(CONFIG) ]; then \
+		echo "✗ 找不到配置文件: $(CONFIG)"; \
+		exit 1; \
+	fi
+	@DEVICE=kindle7 $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+
+# 平板设备优化
+tablet: deps
+	@echo "使用平板设备预设转换PDF..."
+	@if [ ! -f $(CONFIG) ]; then \
+		echo "✗ 找不到配置文件: $(CONFIG)"; \
+		exit 1; \
+	fi
+	@DEVICE=tablet $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+
+# 手机设备优化
+mobile: deps
+	@echo "使用手机设备预设转换PDF..."
+	@if [ ! -f $(CONFIG) ]; then \
+		echo "✗ 找不到配置文件: $(CONFIG)"; \
+		exit 1; \
+	fi
+	@DEVICE=mobile $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+
+# 桌面端优化(默认)
+desktop: deps
+	@echo "使用桌面端预设转换PDF..."
+	@if [ ! -f $(CONFIG) ]; then \
+		echo "✗ 找不到配置文件: $(CONFIG)"; \
+		exit 1; \
+	fi
+	@DEVICE=desktop $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+
+# ========== 测试和其他 ==========
 
 # 测试
 test: deps

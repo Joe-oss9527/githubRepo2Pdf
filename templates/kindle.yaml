@@ -1,0 +1,97 @@
+# Kindle 7英寸专用模板
+name: "Kindle 7英寸"
+description: "专为7英寸Kindle设备优化的阅读模板"
+
+# 文档结构
+structure:
+  # 简化目录树，减少层级以节省空间
+  include_tree: true
+  tree_max_depth: 2
+  
+  # 包含统计信息但简化显示
+  include_stats: true
+  
+  # 按目录组织，便于Kindle导航
+  organization: "directory"
+  
+  # 章节顺序 - 针对小屏幕优化
+  sections:
+    - title: "项目概览"
+      content: |
+        **{{repo_name}}** 源代码文档
+        
+        生成时间：{{date}}
+        
+        本文档专为7英寸Kindle设备优化，采用紧凑布局和适合小屏幕的字体大小。
+        
+    - title: "项目结构"
+      type: "tree"
+      
+    - title: "代码统计"
+      type: "stats"
+      
+    - title: "源代码"
+      type: "files"
+
+# PDF 样式 - Kindle优化设置
+pdf_overrides:
+  # 使用高对比度主题，适合E-ink屏幕
+  highlight_style: "monochrome"
+  
+  # 更小的页边距，最大化内容显示区域
+  geometry: "margin=0.4in"
+  
+  # 适合7英寸屏幕的字体大小
+  fontsize: "8pt"
+  
+  # 更小的代码字体
+  code_fontsize: "\\scriptsize"  # 约7pt
+  
+  # 紧凑的行间距
+  linespread: "0.9"
+  
+  # 优化段落间距
+  parskip: "3pt"
+  
+  # Kindle专用的LaTeX设置
+  latex_options:
+    
+    # 减少章节标题间距
+    section_spacing: "compact"
+
+# 文件过滤规则 - 适合移动阅读
+additional_ignores:
+  # 排除可能影响阅读体验的大文件
+  - "*.min.js"
+  - "*.min.css"
+  - "*.bundle.js" 
+  - "*.chunk.js"
+  - "dist/"
+  - "build/"
+  - "coverage/"
+  - "*.map"
+  - "*.d.ts"
+  
+  # 排除大型数据文件
+  - "*.json" 
+  - "*.xml"
+  - "*.csv"
+  
+  # 保留重要配置文件但排除详细配置
+  - "package-lock.json"
+  - "yarn.lock"
+  - "Pipfile.lock"
+
+# Kindle特定设置
+kindle_settings:
+  # 最大文件大小限制（更严格）
+  max_file_size: "200KB"
+  
+  # 代码行长度限制
+  max_line_length: 60
+  
+  # 是否启用代码折行
+  wrap_code: true
+  
+  # 是否显示行号（建议关闭以节省空间）
+  show_line_numbers: false

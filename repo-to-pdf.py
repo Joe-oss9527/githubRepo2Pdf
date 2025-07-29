@@ -33,6 +33,55 @@ logging.getLogger('git').setLevel(logging.WARNING)
 logging.getLogger('git.cmd').setLevel(logging.WARNING)
 logging.getLogger('git.util').setLevel(logging.WARNING)
 
+def get_device_presets():
+    """获取设备预设配置"""
+    return {
+        'desktop': {
+            'description': '桌面端阅读优化',
+            'template': 'default',
+            'pdf_overrides': {
+                'margin': 'margin=1in',
+                'fontsize': '10pt',
+                'code_fontsize': '\\small',
+                'linespread': '1.0'
+            }
+        },
+        'kindle7': {
+            'description': '7英寸Kindle设备优化',
+            'template': 'kindle',
+            'pdf_overrides': {
+                'margin': 'margin=0.4in',
+                'fontsize': '8pt',
+                'code_fontsize': '\\scriptsize',
+                'linespread': '0.9',
+                'parskip': '3pt',
+                'max_file_size': '200KB',
+                'max_line_length': 60
+            }
+        },
+        'tablet': {
+            'description': '平板设备阅读优化',
+            'template': 'technical',
+            'pdf_overrides': {
+                'margin': 'margin=0.6in',
+                'fontsize': '9pt',
+                'code_fontsize': '\\small',
+                'linespread': '0.95'
+            }
+        },
+        'mobile': {
+            'description': '手机端阅读优化',
+            'template': 'kindle',
+            'pdf_overrides': {
+                'margin': 'margin=0.3in',
+                'fontsize': '7pt',
+                'code_fontsize': '\\tiny',
+                'linespread': '0.85',
+                'parskip': '2pt'
+            }
+        }
+    }
+
 def get_system_fonts():
     """动态检测系统可用的字体"""
     system = os.uname().sysname
@@ -157,9 +206,15 @@ class RepoPDFConverter:
         self.temp_dir = None
         self.template = None
         
+        # 处理设备预设
+        self._apply_device_preset()
+        
         # 加载模板（如果指定）
         if template_name:
             self.template = self._load_template(template_name)
+        # 如果没有指定模板，检查是否有设备预设指定的模板
+        elif hasattr(self, 'device_preset_template'):
+            self.template = self._load_template(self.device_preset_template)
         
         # 确保所有路径都相对于项目根目录
         self.workspace_dir = self.project_root / self.config['workspace_dir']
@@ -221,6 +276,35 @@ class RepoPDFConverter:
         """加载配置文件"""
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
+    
+    def _apply_device_preset(self):
+        """应用设备预设配置"""
+        # 优先使用环境变量，然后是配置文件中的设置
+        device_preset = os.environ.get('DEVICE') or self.config.get('device_preset', 'desktop')
+        
+        # 获取预设配置
+        device_presets = get_device_presets()
+        config_presets = self.config.get('device_presets', {})
+        
+        # 合并代码中的预设和配置文件中的预设
+        all_presets = {**device_presets, **config_presets}
+        
+        if device_preset in all_presets:
+            preset_config = all_presets[device_preset]
+            logger.info(f"Applying device preset: {device_preset} - {preset_config.get('description', '')}")
+            
+            # 保存模板名称供后续使用
+            if 'template' in preset_config:
+                self.device_preset_template = preset_config['template']
+            
+            # 应用PDF设置覆盖
+            if 'pdf_overrides' in preset_config:
+                pdf_settings = self.config.setdefault('pdf_settings', {})
+                for key, value in preset_config['pdf_overrides'].items():
+                    pdf_settings[key] = value
+                    logger.debug(f"Applied preset override: {key}={value}")
+        else:
+            logger.warning(f"Unknown device preset: {device_preset}, using default settings")
     
     def _load_template(self, template_name: str) -> dict:
         """加载模板文件"""
@@ -1048,6 +1132,12 @@ class RepoPDFConverter:
         sans_font = pdf_config.get('sans_font', system_fonts['sans_font'])
         mono_font = pdf_config.get('mono_font', system_fonts['mono_font'])
         
+        # 获取设备相关的字体大小和布局设置
+        code_fontsize = pdf_config.get('code_fontsize', '\\small')
+        fontsize = pdf_config.get('fontsize', '10pt')
+        linespread = pdf_config.get('linespread', '1.0')
+        parskip = pdf_config.get('parskip', '6pt')
+        
         yaml_config = {
             'pdf-engine': 'xelatex',
             'highlight-style': pdf_config.get('highlight_style', 'tango'),
@@ -1055,6 +1145,7 @@ class RepoPDFConverter:
             'variables': {
                 'documentclass': 'article',
                 'geometry': pdf_config.get('margin', 'margin=1in'),
+                'fontsize': fontsize,  # 添加字体大小设置
                 # 中文正文字体
                 'CJKmainfont': main_font,
                 'CJKsansfont': sans_font,
@@ -1084,6 +1175,9 @@ class RepoPDFConverter:
                     '\\usepackage{listings}',
                     # PDF 元数据设置 - 合并为单个字符串以避免YAML解析错误
                     f'\\hypersetup{{pdftitle={{{repo_name} 代码文档}}, pdfauthor={{Repo-to-PDF Generator}}, colorlinks=true, linkcolor=blue, urlcolor=blue}}',
+                    # 布局设置
+                    f'\\linespread{{{linespread}}}',
+                    f'\\setlength{{\\parskip}}{{{parskip}}}',
                     # 字体设置
                     '\\defaultfontfeatures{Mapping=tex-text}',  # 启用 TeX 连字
                     # 中文字体设置（使用检测到的字体）
@@ -1101,9 +1195,9 @@ class RepoPDFConverter:
                     # 图片处理设置
                     '\\usepackage{adjustbox}',
                     '\\setkeys{Gin}{width=0.8\\linewidth,keepaspectratio}',
-                    # 代码块设置
-                    '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}',
-                    '\\fvset{breaklines=true, breakanywhere=true, breakafter=\\\\}',
+                    # 代码块设置 - 使用可配置的字体大小
+                    f'\\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}, fontsize={code_fontsize}}}',
+                    f'\\fvset{{breaklines=true, breakanywhere=true, breakafter=\\\\, fontsize={code_fontsize}}}',
                     # 代码框设置 - 只保留一个定义
                     '\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}',
                 ]
@@ -1256,6 +1350,11 @@ variables:
             sans_font = pdf_config.get('sans_font', system_fonts['sans_font'])
             mono_font = pdf_config.get('mono_font', system_fonts['mono_font'])
             
+            # 获取设备相关的字体大小设置
+            code_fontsize = pdf_config.get('code_fontsize', '\\small')
+            linespread = pdf_config.get('linespread', '1.0')
+            parskip = pdf_config.get('parskip', '6pt')
+            
             # 创建 header.tex 文件
             header_tex_path = self.temp_dir / "header.tex"
             header_content = f"""% 设置字体
@@ -1266,19 +1365,23 @@ variables:
 \\setCJKmonofont{{{main_font}}}
 \\setmonofont{{{mono_font}}}
 
+% 布局设置
+\\linespread{{{linespread}}}
+\\setlength{{\\parskip}}{{{parskip}}}
+
 % 中文支持
 \\XeTeXlinebreaklocale "zh"
 \\XeTeXlinebreakskip = 0pt plus 1pt
 
 % 代码高亮
 \\usepackage{{fvextra}}
-\\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}, fontsize=\\small}}
-\\fvset{{breaklines=true, breakanywhere=true, fontsize=\\small, tabsize=2}}
+\\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}, fontsize={code_fontsize}}}
+\\fvset{{breaklines=true, breakanywhere=true, fontsize={code_fontsize}, tabsize=2}}
 
 % 使用 listings 包处理特殊字符
 \\usepackage{{listings}}
 \\lstset{{
-  basicstyle=\\ttfamily\\small,
+  basicstyle=\\ttfamily{code_fontsize},
   breaklines=true,
   breakatwhitespace=false,
   keepspaces=true,

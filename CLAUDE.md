@@ -24,6 +24,15 @@ QUIET=1 make
 # Use custom template
 TEMPLATE=technical make
 
+# Use device presets for optimized reading
+make kindle             # 7-inch Kindle optimization
+make tablet             # Tablet device optimization  
+make mobile             # Mobile device optimization
+make desktop            # Desktop optimization (default)
+
+# Use device preset via environment variable
+DEVICE=kindle7 make
+
 # Install system and Python dependencies only
 make deps
 
@@ -66,8 +75,10 @@ make test-coverage
 
 1. **repo-to-pdf.py**: Main script containing:
    - `GitRepoManager`: Handles repository cloning/updating with shallow clones, supports HTTP/HTTPS/SSH URLs
-   - `RepoPDFConverter`: Core conversion logic with template support
+   - `RepoPDFConverter`: Core conversion logic with template support and device preset integration
    - `get_system_fonts()`: Cross-platform font detection
+   - `get_device_presets()`: Device-specific configuration presets (desktop, kindle7, tablet, mobile)
+   - `_apply_device_preset()`: Applies device-specific settings based on environment or config
    - `generate_directory_tree()`: Visual project structure generation
    - `generate_code_stats()`: Code statistics and language analysis
    - Smart file filtering and size management (0.5MB default limit)
@@ -87,32 +98,43 @@ make test-coverage
    - Python virtual environment management
    - Colored output with multiple verbosity levels
    - Homebrew integration for macOS dependencies
+   - Device preset shortcuts (`make kindle`, `make tablet`, etc.)
+   - Environment variable support for device presets (`DEVICE=kindle7`)
 
 3. **config.yaml**: User configuration:
    - Repository URL and branch specification
    - Output directories and PDF settings
+   - Device preset configuration (`device_preset`, `device_presets`)
    - Extensive ignore patterns for build artifacts
-   - Font and styling customization
+   - Font and styling customization with device-specific overrides
 
 4. **templates/**: Template system for custom PDF structures:
    - `default.yaml`: Standard code documentation template
    - `technical.yaml`: Technical documentation template with file type grouping
+   - `kindle.yaml`: 7-inch Kindle optimized template with compact layout
    - Support for custom sections, statistics, and styling
+   - Device-specific font sizes and layout optimizations
 
 ### Conversion Pipeline
 
-1. Clone/update target repository (shallow clone with `--depth=1`)
-2. Walk repository tree, filtering by ignore patterns
-3. Process each file:
+1. Apply device preset configuration (if specified via DEVICE env var or config)
+2. Clone/update target repository (shallow clone with `--depth=1`)
+3. Walk repository tree, filtering by ignore patterns
+4. Process each file:
    - Convert SVG images to PNG for PDF compatibility
    - Download and embed remote images
    - Apply syntax highlighting to code files
    - Handle HTML to Markdown conversion
-4. Combine all content into single Markdown file
-5. Generate PDF using Pandoc with XeLaTeX backend
+5. Combine all content into single Markdown file
+6. Generate PDF using Pandoc with XeLaTeX backend and device-optimized settings
 
 ### Key Technical Details
 
+- **Device Presets**: Configurable device-specific settings for optimal reading experience
+  - Desktop: Standard layout with 10pt fonts and 1-inch margins
+  - Kindle7: Compact layout with 8pt fonts, `\scriptsize` code, and 0.4-inch margins
+  - Tablet: Medium layout with 9pt fonts and 0.6-inch margins  
+  - Mobile: Ultra-compact with 7pt fonts and 0.3-inch margins
 - **Image Handling**: Automatic SVG to PNG conversion, remote image downloading with caching
 - **Text Processing**: Smart handling of Chinese text, LaTeX special character escaping
 - **File Management**: Respects .gitignore, applies extensive default ignore patterns
@@ -181,8 +203,29 @@ Modify `pdf_settings` in config.yaml:
 - `margin`: Page margins
 - `main_font`: Primary font (default: "Songti SC" for Chinese on macOS, "Noto Serif CJK SC" on Linux)
 - `mono_font`: Code font (default: "SF Mono" on macOS, "DejaVu Sans Mono" on Linux)
+- `fontsize`: Document font size (e.g., "10pt", "8pt")
+- `code_fontsize`: Code block font size (e.g., "\\small", "\\scriptsize", "\\tiny")
+- `linespread`: Line spacing multiplier (e.g., "1.0", "0.9")
+- `parskip`: Paragraph spacing (e.g., "6pt", "3pt")
 - `highlight_style`: Pandoc highlight theme
 - `split_large_files`: Whether to split large files into parts (default: true)
+
+### Using Device Presets
+Set device preset in config.yaml or use environment variable:
+```yaml
+device_preset: "kindle7"  # or desktop, tablet, mobile
+```
+Or use make shortcuts:
+```bash
+make kindle    # Kindle 7-inch optimization
+make tablet    # Tablet optimization  
+make mobile    # Mobile optimization
+make desktop   # Desktop optimization (default)
+```
+Or use environment variable:
+```bash
+DEVICE=kindle7 make
+```
 
 ### Debugging Conversion Issues
 1. Run with `make debug` to see detailed logs

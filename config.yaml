@@ -7,6 +7,10 @@ repository:
 workspace_dir: "./repo-workspace"
 output_dir: "./repo-pdfs"
 
+# 设备预设配置
+device_preset: "desktop"  # 可选值: desktop, kindle7, tablet, mobile
+# 或使用环境变量: DEVICE=kindle7 make
+
 # PDF 设置
 pdf_settings:
   margin: "margin=1in"
@@ -14,10 +18,61 @@ pdf_settings:
   mono_font: "DejaVu Sans Mono"
   highlight_style: "monochrome"
   split_large_files: true  # 将大文件分割成多个部分而不是截断
+  
+  # 字体大小设置（可被设备预设覆盖）
+  fontsize: "10pt"
+  code_fontsize: "\\small"  # 代码字体大小
+  
+  # 布局设置
+  linespread: "1.0"  # 行间距
+  parskip: "6pt"     # 段落间距
+  
   metadata:
     author: "Repo-to-PDF Generator"
     creator: "LaTeX"
     producer: "XeLaTeX"
+
+# 设备特定配置预设
+device_presets:
+  desktop:
+    description: "桌面端阅读优化"
+    template: "default"
+    pdf_overrides:
+      margin: "margin=1in"
+      fontsize: "10pt"
+      code_fontsize: "\\small"
+      linespread: "1.0"
+      
+  kindle7:
+    description: "7英寸Kindle设备优化"
+    template: "kindle"
+    pdf_overrides:
+      margin: "margin=0.4in"
+      fontsize: "8pt"
+      code_fontsize: "\\scriptsize"
+      linespread: "0.9"
+      parskip: "3pt"
+      max_file_size: "200KB"
+      max_line_length: 60
+      
+  tablet:
+    description: "平板设备阅读优化"
+    template: "technical"  
+    pdf_overrides:
+      margin: "margin=0.6in"
+      fontsize: "9pt"
+      code_fontsize: "\\small"
+      linespread: "0.95"
+      
+  mobile:
+    description: "手机端阅读优化"
+    template: "kindle"
+    pdf_overrides:
+      margin: "margin=0.3in"
+      fontsize: "7pt"
+      code_fontsize: "\\tiny"
+      linespread: "0.85"
+      parskip: "2pt"
 
 # 忽略的文件或目录
 ignores:

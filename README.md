@@ -15,6 +15,7 @@
 - 流式处理，避免内存溢出
 - 错误恢复机制
 - 自定义模板系统
+- 设备预设系统（支持Kindle、平板、手机等设备优化）
 - 完整的单元测试和集成测试
 - 55%+ 测试覆盖率（持续改进中）
 
@@ -91,6 +92,15 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
    
    # 使用自定义模板
    TEMPLATE=technical make
+   
+   # 使用设备预设
+   make kindle    # 7英寸Kindle优化
+   make tablet    # 平板设备优化
+   make mobile    # 手机设备优化
+   make desktop   # 桌面端优化（默认）
+   
+   # 或使用环境变量
+   DEVICE=kindle7 make
    ```
 
 生成的 PDF 文件将保存在 `repo-pdfs` 目录下。
@@ -106,6 +116,9 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
    
    # 使用默认模板
    TEMPLATE=default make
+   
+   # 使用Kindle优化模板
+   TEMPLATE=kindle make
    ```
 
 2. **创建自定义模板**
@@ -125,6 +138,51 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
 3. **可用的模板变量**
    - `{{repo_name}}` - 仓库名称
    - `{{date}}` - 生成日期
+
+## 设备预设
+
+工具提供了针对不同设备优化的预设配置，让生成的PDF在各种设备上都有最佳的阅读体验：
+
+### 可用预设
+
+| 预设名称 | 适用设备 | 字体大小 | 代码字体 | 页边距 | 特点 |
+|---------|---------|---------|----------|-------|------|
+| `desktop` | 桌面电脑 | 10pt | `\small` | 1英寸 | 标准布局，适合大屏幕 |
+| `kindle7` | 7英寸Kindle | 8pt | `\scriptsize` | 0.4英寸 | 紧凑布局，E-ink优化 |
+| `tablet` | 平板设备 | 9pt | `\small` | 0.6英寸 | 中等布局，触屏友好 |
+| `mobile` | 手机设备 | 7pt | `\tiny` | 0.3英寸 | 超紧凑，小屏优化 |
+
+### 使用方法
+
+1. **通过make快捷命令**：
+   ```bash
+   make kindle    # 使用Kindle预设
+   make tablet    # 使用平板预设
+   make mobile    # 使用手机预设
+   make desktop   # 使用桌面预设（默认）
+   ```
+
+2. **通过环境变量**：
+   ```bash
+   DEVICE=kindle7 make
+   DEVICE=tablet make
+   ```
+
+3. **通过配置文件**：
+   在 `config.yaml` 中设置：
+   ```yaml
+   device_preset: "kindle7"  # 或 desktop, tablet, mobile
+   ```
+
+### Kindle优化特性
+
+Kindle预设专门针对7英寸E-ink屏幕进行了优化：
+
+- **紧凑布局**：0.4英寸页边距，最大化内容显示区域
+- **适宜字体**：8pt主字体，`\scriptsize`代码字体，适合小屏阅读
+- **高对比度**：使用monochrome语法高亮，适合E-ink显示
+- **优化间距**：0.9倍行间距，3pt段落间距，节省空间
+- **简化结构**：最多2层目录树，减少导航复杂度
 
 ## 测试
 
@@ -188,11 +246,18 @@ repository:
 workspace_dir: "./repo-workspace"  # 工作目录
 output_dir: "./repo-pdfs"         # PDF 输出目录
 
+# 设备预设配置
+device_preset: "desktop"  # 可选：desktop, kindle7, tablet, mobile
+
 # PDF 设置
 pdf_settings:
   margin: "margin=1in"           # 页边距
   main_font: "Songti SC"         # 主字体（macOS）/ "Noto Serif CJK SC"（Linux）
   mono_font: "SF Mono"           # 等宽字体（macOS）/ "DejaVu Sans Mono"（Linux）
+  fontsize: "10pt"               # 文档字体大小
+  code_fontsize: "\\small"       # 代码块字体大小
+  linespread: "1.0"              # 行间距倍数
+  parskip: "6pt"                 # 段落间距
   highlight_style: "monochrome"  # 代码高亮主题
   split_large_files: true        # 将大文件分割成多个部分而不是截断
 
@@ -248,6 +313,12 @@ ignores:
    - 确保已安装 Cairo 和 Inkscape
    - 检查 SVG 文件格式是否正确
    - 使用 `make debug` 查看详细的转换日志
+
+6. **设备预设相关问题**
+   - 如果PDF在特定设备上显示效果不佳，尝试使用对应的设备预设
+   - Kindle用户推荐使用 `make kindle` 获得最佳阅读体验
+   - 可以通过修改配置文件中的 `device_presets` 来自定义设备配置
+   - 环境变量 `DEVICE` 的优先级高于配置文件中的 `device_preset`
 
 ## License
 
