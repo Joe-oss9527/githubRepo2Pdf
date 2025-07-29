@@ -148,7 +148,7 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
 | 预设名称 | 适用设备 | 字体大小 | 代码字体 | 页边距 | 特点 |
 |---------|---------|---------|----------|-------|------|
 | `desktop` | 桌面电脑 | 10pt | `\small` | 1英寸 | 标准布局，适合大屏幕 |
-| `kindle7` | 7英寸Kindle | 8pt | `\scriptsize` | 0.4英寸 | 紧凑布局，E-ink优化 |
+| `kindle7` | 7英寸Kindle | 10pt | `\small` | 0.4英寸 | 紧凑布局，E-ink优化 |
 | `tablet` | 平板设备 | 9pt | `\small` | 0.6英寸 | 中等布局，触屏友好 |
 | `mobile` | 手机设备 | 7pt | `\tiny` | 0.3英寸 | 超紧凑，小屏优化 |
 
@@ -179,9 +179,9 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
 Kindle预设专门针对7英寸E-ink屏幕进行了优化：
 
 - **紧凑布局**：0.4英寸页边距，最大化内容显示区域
-- **适宜字体**：8pt主字体，`\scriptsize`代码字体，适合小屏阅读
+- **适宜字体**：10pt主字体，`\small`(9pt)代码字体，确保清晰可读
 - **高对比度**：使用monochrome语法高亮，适合E-ink显示
-- **优化间距**：0.9倍行间距，3pt段落间距，节省空间
+- **优化间距**：0.95倍行间距，4pt段落间距，平衡空间与可读性
 - **简化结构**：最多2层目录树，减少导航复杂度
 
 ## 测试

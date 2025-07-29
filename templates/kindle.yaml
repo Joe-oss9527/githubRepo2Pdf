@@ -42,16 +42,16 @@ pdf_overrides:
   geometry: "margin=0.4in"
   
   # 适合7英寸屏幕的字体大小
-  fontsize: "8pt"
+  fontsize: "10pt"  # 提升到10pt，确保可读性
   
-  # 更小的代码字体
-  code_fontsize: "\\scriptsize"  # 约7pt
+  # 代码字体大小
+  code_fontsize: "\\small"  # 9pt，比\scriptsize(7pt)更清晰
   
-  # 紧凑的行间距
-  linespread: "0.9"
+  # 适中的行间距
+  linespread: "0.95"  # 稍微增加行间距
   
   # 优化段落间距
-  parskip: "3pt"
+  parskip: "4pt"  # 增加段落间距
   
   # Kindle专用的LaTeX设置
   latex_options:
