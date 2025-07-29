@@ -132,7 +132,7 @@ make test-coverage
 
 - **Device Presets**: Configurable device-specific settings for optimal reading experience
   - Desktop: Standard layout with 10pt fonts and 1-inch margins
-  - Kindle7: Compact layout with 10pt fonts, `\small` code, and 0.4-inch margins
+  - Kindle7: Expert-recommended layout with 11pt fonts, `\small` code, and 0.4-inch margins
   - Tablet: Medium layout with 9pt fonts and 0.6-inch margins  
   - Mobile: Ultra-compact with 7pt fonts and 0.3-inch margins
 - **Image Handling**: Automatic SVG to PNG conversion, remote image downloading with caching

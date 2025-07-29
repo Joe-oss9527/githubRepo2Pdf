@@ -51,10 +51,10 @@ def get_device_presets():
             'template': 'kindle',
             'pdf_overrides': {
                 'margin': 'margin=0.4in',
-                'fontsize': '10pt',  # 提升到10pt，确保可读性
-                'code_fontsize': '\\small',  # 使用\small(9pt)而不是\scriptsize(7pt)
-                'linespread': '0.95',  # 稍微增加行间距
-                'parskip': '4pt',  # 增加段落间距
+                'fontsize': '11pt',  # 按专家建议使用11pt正文字体
+                'code_fontsize': '\\small',  # 在11pt文档中\small约为10pt
+                'linespread': '1.0',  # 标准行间距
+                'parskip': '5pt',  # 适当的段落间距
                 'max_file_size': '200KB',
                 'max_line_length': 60
             }
