@@ -92,19 +92,40 @@ def get_system_fonts():
             'main_font': 'Songti SC',
             'sans_font': 'PingFang SC',
             'mono_font': 'SF Mono',
-            'fallback_fonts': ['STSong', 'Hiragino Sans GB', 'Arial Unicode MS']
+            'fallback_fonts': ['STSong', 'Hiragino Sans GB', 'Arial Unicode MS'],
+            # 常见的可用 emoji 字体（按优先级，优先选择黑白字体以保证 XeLaTeX 稳定渲染）
+            'emoji_fonts': [
+                'Noto Emoji',
+                'Noto Color Emoji',
+                'Segoe UI Emoji',
+                'Apple Color Emoji',
+                
+            ]
         },
         'Linux': {
             'main_font': 'Noto Serif CJK SC',
             'sans_font': 'Noto Sans CJK SC',
             'mono_font': 'DejaVu Sans Mono',
-            'fallback_fonts': ['WenQuanYi Micro Hei', 'AR PL UMing CN', 'SimSun']
+            'fallback_fonts': ['WenQuanYi Micro Hei', 'AR PL UMing CN', 'SimSun'],
+            'emoji_fonts': [
+                'Noto Emoji',
+                'Noto Color Emoji',
+                'Twitter Color Emoji',
+                'EmojiOne Color',
+                
+            ]
         },
         'Windows': {
             'main_font': 'SimSun',
             'sans_font': 'Microsoft YaHei',
             'mono_font': 'Consolas',
-            'fallback_fonts': ['KaiTi', 'FangSong']
+            'fallback_fonts': ['KaiTi', 'FangSong'],
+            'emoji_fonts': [
+                'Noto Emoji',
+                'Noto Color Emoji',
+                'Segoe UI Emoji',
+                
+            ]
         }
     }
     
@@ -112,8 +133,8 @@ def get_system_fonts():
     
     # 尝试检测实际可用的字体
     try:
-        # 使用 fc-list 命令检测字体（Linux/macOS）
-        if system in ['Darwin', 'Linux']:
+        # 使用 fc-list 命令检测字体（仅 Linux）。macOS 上保持默认以避免不稳定回退。
+        if system in ['Linux']:
             result = subprocess.run(['fc-list', ':lang=zh', 'family'], 
                                   capture_output=True, text=True)
             if result.returncode == 0:
@@ -132,6 +153,10 @@ def get_system_fonts():
     except Exception as e:
         logger.debug(f"Could not detect system fonts: {e}")
     
+    # 如果没有提供 emoji_fonts（理论上不会发生），提供一个兜底值
+    if 'emoji_fonts' not in fonts:
+        fonts['emoji_fonts'] = ['Noto Color Emoji', 'Noto Emoji', 'Segoe UI Emoji', 'Apple Color Emoji']
+
     return fonts
 
 class GitRepoManager:
@@ -218,7 +243,21 @@ class RepoPDFConverter:
         
         # 确保所有路径都相对于项目根目录
         self.workspace_dir = self.project_root / self.config['workspace_dir']
+        # 缓存表情图片路径（sequence -> png path）
+        self._emoji_cache = {}
         self.output_dir = self.project_root / self.config['output_dir']
+
+        # 通用 PDF 相关开关（带默认值）
+        pdf_cfg = self.config.get('pdf_settings', {})
+        self.render_header_comments_outside_code = pdf_cfg.get('render_header_comments_outside_code', True)
+        self.code_block_strategy = pdf_cfg.get('code_block_strategy', 'normal')
+        # 控制极端长行的强制折行阈值
+        try:
+            self.max_line_length = int(pdf_cfg.get('max_line_length', 200))
+        except Exception:
+            self.max_line_length = 200
+        # Emoji 下载与缓存
+        self.emoji_download = bool(pdf_cfg.get('emoji_download', True))
         
         # 创建必要的目录
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -674,6 +713,77 @@ class RepoPDFConverter:
         # 匹配内嵌的 SVG 标签
         content = re.sub(r'<svg\s*.*?>.*?</svg>', process_svg, content, flags=re.DOTALL | re.IGNORECASE)
         
+        # 7. 转义非代码区域中的 \UXXXX 与 \uXXXX 序列，避免被 LaTeX 识别为控制序列
+        def escape_backslash_u_outside_code(md: str) -> str:
+            import re
+            lines = md.splitlines()
+            out = []
+            in_code = False
+            fence = None
+            for ln in lines:
+                if not in_code:
+                    m = re.match(r"^(?P<fence>```+)(?P<info>.*)$", ln)
+                    if m:
+                        in_code = True
+                        fence = m.group('fence')
+                        out.append(ln)
+                        continue
+                    # 转义 \UXXXXXXXX 或 \uXXXX
+                    ln = re.sub(r"\\U([0-9A-Fa-f]{8})", r"\\textbackslash{}U\\1", ln)
+                    ln = re.sub(r"\\u([0-9A-Fa-f]{4})", r"\\textbackslash{}u\\1", ln)
+                    out.append(ln)
+                else:
+                    out.append(ln)
+                    if ln.startswith(fence):
+                        in_code = False
+                        fence = None
+            return '\n'.join(out)
+
+        content = escape_backslash_u_outside_code(content)
+
+        # 8. 对 Markdown 中的 fenced code blocks 执行硬折行，防止 Verbatim 溢出
+        def hard_wrap_md_code_blocks(md: str) -> str:
+            import re
+            lines = md.splitlines()
+            out = []
+            in_code = False
+            fence = None
+            hard_wrap_threshold = max(40, int(self.config.get('pdf_settings', {}).get('max_line_length', 200)))
+            wrap_width = max(40, min(160, int(hard_wrap_threshold * 0.75)))
+            for ln in lines:
+                if not in_code:
+                    m = re.match(r"^(?P<fence>```+)(?P<info>.*)$", ln)
+                    if m:
+                        info = (m.group('info') or '').strip().lower()
+                        fence = m.group('fence')
+                        in_code = True
+                        out.append(ln)
+                        # 跳过我们注入的原生 LaTeX 代码块，不修改其中内容
+                        skip_block = ('{=latex}' in info) or (info == 'latex')
+                        if skip_block:
+                            # 标记特殊状态：in_code 仍为 True，但不做折行
+                            fence = fence + '|SKIP'
+                        continue
+                    out.append(ln)
+                else:
+                    # 结束 fenced block
+                    if ln.startswith((fence if 'SKIP' not in fence else fence.split('|')[0])):
+                        in_code = False
+                        out.append(ln)
+                        fence = None
+                        continue
+                    # 对普通 fenced code 行做硬折行
+                    if 'SKIP' in fence:
+                        out.append(ln)
+                    else:
+                        if len(ln) > hard_wrap_threshold:
+                            out.append('\n'.join(ln[i:i+wrap_width] for i in range(0, len(ln), wrap_width)))
+                        else:
+                            out.append(ln)
+            return '\n'.join(out)
+
+        content = hard_wrap_md_code_blocks(content)
+
         return content
 
     def _clean_text(self, text: str) -> str:
@@ -685,7 +795,7 @@ class RepoPDFConverter:
     def process_file(self, file_path: Path, repo_root: Path) -> str:
         """处理单个文件，返回对应的 Markdown 内容"""
         import re
-        
+
         ext = file_path.suffix.lower()
         rel_path = file_path.relative_to(repo_root)
         
@@ -800,6 +910,9 @@ class RepoPDFConverter:
                                 continue
                         
                         logger.warning(f"无法找到图片: {img_path}, 在文件: {file_path}")
+                        # 为避免 Pandoc 因缺图失败，移除该图片并保留替代文本
+                        alt_text = match.group(1) or ''
+                        return alt_text
                     return match.group(0)
                 
                 # 处理 Markdown 中的图片引用
@@ -826,20 +939,55 @@ class RepoPDFConverter:
                     
                 # 对于其他文件使用语言高亮
                 lang = self.code_extensions[ext]
-                # 处理长字符串，将它们分割成多行
-                content = self._process_long_lines(content)
-                
+                # 1) 可选：提取头部注释为正文（非代码块），避免 emoji 落在代码环境中
+                header_md = ""
+                code_body = content
+                if self.render_header_comments_outside_code:
+                    header_text, code_body = self._extract_header_comment(code_body, ext)
+                    if header_text:
+                        # 将 emoji 转成 PNG，并在正文中用普通 LaTeX 宏插入
+                        header_text = self._replace_emoji_with_images(header_text, in_code=False)
+                        header_md = header_text.strip() + "\n\n"
+
+                # 2) 处理长字符串，将它们分割成多行
+                code_body = self._process_long_lines(code_body)
+
+                # 3) 更激进的长行防御：强制切分超长行
+                hard_wrap_threshold = max(40, int(self.max_line_length))
+                wrap_width = max(40, min(160, int(self.max_line_length * 0.75)))
+                tmp_lines = []
+                for _ln in code_body.splitlines():
+                    if len(_ln) > hard_wrap_threshold:
+                        tmp_lines.append('\n'.join(_ln[i:i+wrap_width] for i in range(0, len(_ln), wrap_width)))
+                    else:
+                        tmp_lines.append(_ln)
+                code_body = '\n'.join(tmp_lines)
+
+                # 4) 将 Emoji 替换为内联图片（仅代码正文）
+                code_transformed = self._replace_emoji_with_images(code_body, in_code=True)
+                contains_emoji_in_code = '§emojiimg' in code_transformed
+
                 # 如果内容过大，分割成多个部分
-                lines = content.splitlines()
+                lines = code_transformed.splitlines()
                 if len(lines) > 1000:
                     # 检查配置是否启用了智能分割
                     if self.config.get('pdf_settings', {}).get('split_large_files', True):
-                        return self._process_large_file(rel_path, lines, lang)
+                        # 写入标题与可能的头注释后，分段输出代码
+                        head = f"\n\n# {rel_path}\n\n" + header_md
+                        parts = self._process_large_file(rel_path, lines, lang)
+                        return head + parts
                     else:
                         # 使用传统的截断方式
-                        content = '\n'.join(lines[:1000]) + '\n\n... (文件太大，已截断)'
-                
-                return f"\n\n# {rel_path}\n\n`````{lang}\n{content}\n`````\n\n"
+                        code_transformed = '\n'.join(lines[:1000]) + '\n\n... (文件太大，已截断)'
+
+                # 5) 输出（根据策略选择 CodeBlock）
+                head = f"\n\n# {rel_path}\n\n" + header_md
+                if contains_emoji_in_code and self.code_block_strategy in ("codeblock_for_emoji", "normal"):
+                    return head + (
+                        f"```{{=latex}}\n\\begin{{CodeBlock}}\n{code_transformed}\n\\end{{CodeBlock}}\n```\n\n"
+                    )
+                else:
+                    return head + f"`````{lang}\n{code_transformed}\n`````\n\n"
                 
             return ""
         except UnicodeDecodeError:
@@ -891,6 +1039,212 @@ class RepoPDFConverter:
             return match.group(0)
             
         return re.sub(pattern, replacer, line)
+
+    # ========== Emoji 处理 ==========
+    def _emoji_regex(self):
+        import re
+        return re.compile(
+            r"([\U0001F300-\U0001FAFF\u2600-\u27BF])"  # 基本 emoji 范围
+            r"(\uFE0F)?"                                 # 可选 VS16
+            r"(?:\u200D[\U0001F300-\U0001FAFF\u2600-\u27BF](\uFE0F)?)*"  # 可选 ZWJ 序列
+        )
+
+    def _ensure_emoji_png(self, seq_full: str) -> str:
+        """确保给定 emoji 序列的 PNG 存在，返回相对文件名（位于 temp_conversion_files/images/emoji）。
+        可能返回空字符串表示不可用。
+        遵循配置：emoji_download（允许下载），多版本回退。
+        """
+        # 懒创建资源目录
+        if not self.temp_dir:
+            self.temp_dir = self.project_root / "temp_conversion_files"
+            self.temp_dir.mkdir(exist_ok=True)
+        emoji_dir = self.temp_dir / "images" / "emoji"
+        emoji_dir.mkdir(parents=True, exist_ok=True)
+
+        # 命中内存缓存
+        if seq_full in self._emoji_cache:
+            return self._emoji_cache[seq_full]
+
+        # 构造候选序列：完整 -> 去 fe0f -> 首码位
+        seqs = [seq_full]
+        no_fe0f = "-".join(p for p in seq_full.split('-') if p != 'fe0f')
+        if no_fe0f not in seqs:
+            seqs.append(no_fe0f)
+        first = seq_full.split('-')[0]
+        if first not in seqs:
+            seqs.append(first)
+
+        # 先查缓存文件是否已存在
+        for name in seqs:
+            candidate = emoji_dir / f"{name}.png"
+            if candidate.exists():
+                self._emoji_cache[seq_full] = candidate.name
+                return candidate.name
+
+        # 不允许下载则直接返回空
+        if not self.emoji_download:
+            self._emoji_cache[seq_full] = ""
+            return ""
+
+        # 允许下载，按版本序列重试
+        versions = ["v14.0.2", "v14.0.0", "master"]
+        chosen_name = None
+        svg_bytes = None
+        for ver in versions:
+            url_tpl = f"https://raw.githubusercontent.com/twitter/twemoji/{ver}/assets/svg/{{name}}.svg"
+            for name in seqs:
+                try:
+                    resp = requests.get(url_tpl.format(name=name), timeout=10)
+                    if resp.status_code == 200 and resp.content:
+                        svg_bytes = resp.content
+                        chosen_name = name
+                        break
+                except Exception:
+                    continue
+            if svg_bytes:
+                break
+
+        if not svg_bytes or not chosen_name:
+            self._emoji_cache[seq_full] = ""
+            return ""
+
+        # 转写为 PNG
+        out_name = f"{chosen_name}.png"
+        out_path = emoji_dir / out_name
+        try:
+            import cairosvg
+            cairosvg.svg2png(bytestring=svg_bytes, write_to=str(out_path))
+            self._emoji_cache[seq_full] = out_name
+            return out_name
+        except Exception:
+            self._emoji_cache[seq_full] = ""
+            return ""
+
+    def _replace_emoji_with_images(self, text: str, in_code: bool) -> str:
+        """把文本中的 Emoji 替换为 `\emojiimg{...}`（正文）或 `§emojiimg«... »`（代码）并准备好 PNG 资源。"""
+        try:
+            emoji_re = self._emoji_regex()
+
+            def codepoints_to_seq(s: str) -> str:
+                return "-".join(f"{ord(ch):x}" for ch in s)
+
+            def repl(m):
+                s = m.group(0)
+                seq = codepoints_to_seq(s)
+                rel = self._ensure_emoji_png(seq)
+                if rel:
+                    return (f"§emojiimg«{rel}»" if in_code else f"\\emojiimg{{{rel}}}")
+                return s
+
+            return emoji_re.sub(repl, text)
+        except Exception:
+            return text
+
+    def _replace_emoji_with_images_in_code(self, text: str) -> str:
+        # 兼容旧调用
+        return self._replace_emoji_with_images(text, in_code=True)
+
+    # ========== 文件头注释抽取 ==========
+    def _extract_header_comment(self, content: str, ext: str):
+        """抽取文件开头的注释块，返回 (header_text, remaining_code)。
+        仅处理典型语言：
+        - C 类: // 与 /* */
+        - 脚本/配置: #
+        - SQL: --
+        遇到第一行空行或非注释行即停止抽取。
+        """
+        lines = content.splitlines()
+        if not lines:
+            return "", content
+
+        i = 0
+        n = len(lines)
+
+        def is_blank(idx):
+            return idx < n and lines[idx].strip() == ""
+
+        def starts_with(idx, prefix):
+            return idx < n and lines[idx].lstrip().startswith(prefix)
+
+        header_chunks = []
+
+        # 判定注释风格
+        c_like_exts = {'.js', '.jsx', '.ts', '.tsx', '.java', '.cpp', '.c', '.go', '.cs', '.php'}
+        sharp_exts = {'.py', '.sh', '.bash', '.zsh', '.rb', '.yaml', '.yml', '.toml', '.ini'}
+        sql_exts = {'.sql'}
+
+        def strip_line_comment(s, marker):
+            # 去掉 marker 及后续一个空格
+            t = s.lstrip()
+            if t.startswith(marker):
+                return t[len(marker):].lstrip()
+            return s
+
+        # 仅当第一行就是注释时才开始提取
+        if is_blank(0):
+            return "", content
+
+        consumed = 0
+        if ext in c_like_exts:
+            # 处理块注释开头
+            if starts_with(0, "/*"):
+                buf = []
+                line = lines[i].lstrip()
+                # 去头
+                if line.startswith("/*"):
+                    line = line[2:]
+                # 读取直到 */
+                while i < n:
+                    end_pos = line.find("*/")
+                    if end_pos != -1:
+                        buf.append(line[:end_pos])
+                        i += 1
+                        break
+                    buf.append(line)
+                    i += 1
+                    if i < n:
+                        line = lines[i]
+                header_chunks.append("\n".join(buf))
+                consumed = i
+                # 块注释后，如果下一行是空行则停止；如果仍是 // 连续注释则继续收集直到空行
+                while consumed < n and lines[consumed].lstrip().startswith("//"):
+                    header_chunks.append(strip_line_comment(lines[consumed], "//"))
+                    consumed += 1
+                if consumed < n and lines[consumed].strip() == "":
+                    i = consumed  # 跳过空行
+                else:
+                    i = consumed
+            elif starts_with(0, "//"):
+                while i < n and lines[i].lstrip().startswith("//"):
+                    header_chunks.append(strip_line_comment(lines[i], "//"))
+                    i += 1
+            else:
+                return "", content
+        elif ext in sharp_exts:
+            if lines[0].lstrip().startswith("#"):
+                while i < n and lines[i].lstrip().startswith("#"):
+                    header_chunks.append(strip_line_comment(lines[i], "#"))
+                    i += 1
+            else:
+                return "", content
+        elif ext in sql_exts:
+            if lines[0].lstrip().startswith("--"):
+                while i < n and lines[i].lstrip().startswith("--"):
+                    header_chunks.append(strip_line_comment(lines[i], "--"))
+                    i += 1
+            else:
+                return "", content
+        else:
+            # 其他语言暂不处理
+            return "", content
+
+        # 到空行即止，不包含空行
+        if i < n and lines[i].strip() == "":
+            i += 1  # 跳过这一空行
+
+        header_text = "\n".join(h.rstrip() for h in header_chunks).strip()
+        remaining = "\n".join(lines[i:])
+        return header_text, remaining
     
     def _process_large_file(self, rel_path: str, lines: list, lang: str) -> str:
         """处理大文件，将其分割成多个部分"""
@@ -911,9 +1265,16 @@ class RepoPDFConverter:
             
             # 添加部分标题
             result.append(f"\n## {rel_path} - 第 {i+1}/{num_parts} 部分 (行 {start+1}-{end})")
-            result.append(f"\n`````{lang}\n")
-            result.append(part_content)
-            result.append("\n`````\n")
+            if '§emojiimg' in part_content:
+                result.append("\n```{=latex}\n")
+                result.append("\\begin{CodeBlock}\n")
+                result.append(part_content)
+                result.append("\n\\end{CodeBlock}\n")
+                result.append("```\n")
+            else:
+                result.append(f"\n`````{lang}\n")
+                result.append(part_content)
+                result.append("\n`````\n")
         
         return ''.join(result)
     
@@ -1208,35 +1569,64 @@ class RepoPDFConverter:
         
         # 先创建 header includes 文件
         header_tex_path = Path(self.temp_dir) / "header.tex"
-        header_content = f"""\\usepackage{{fontspec}}
-\\usepackage{{xunicode}}
-\\usepackage{{xeCJK}}
-\\usepackage{{fvextra}}
-\\usepackage[most]{{tcolorbox}}
-\\usepackage{{graphicx}}
-\\usepackage{{float}}
-\\usepackage{{sectsty}}
-\\usepackage{{hyperref}}
-\\usepackage{{longtable}}
-\\usepackage{{ragged2e}}
-\\AtBeginDocument{{\\justifying}}
-\\usepackage{{listings}}
-\\hypersetup{{pdftitle={{{repo_name} 代码文档}}, pdfauthor={{Repo-to-PDF Generator}}, colorlinks=true, linkcolor=blue, urlcolor=blue}}
-\\defaultfontfeatures{{Mapping=tex-text}}
-\\setCJKmainfont{{{main_font}}}
-\\setCJKsansfont{{{sans_font}}}
-\\setCJKmonofont{{{main_font}}}
-\\XeTeXlinebreaklocale "zh"
-\\XeTeXlinebreakskip = 0pt plus 1pt
-\\allsectionsfont{{\\CJKfamily{{sf}}}}
-\\DeclareGraphicsExtensions{{.png,.jpg,.jpeg,.gif}}
-\\graphicspath{{{{./images/}}}}
-\\usepackage{{adjustbox}}
-\\setkeys{{Gin}}{{width=0.8\\linewidth,keepaspectratio}}
-\\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}}}
-\\fvset{{breaklines=true, breakanywhere=true, breakafter=\\\\}}
-\\renewenvironment{{Shaded}}{{\\begin{{tcolorbox}}[breakable,boxrule=0pt,frame hidden,sharp corners]}}{{\\end{{tcolorbox}}}}
-"""
+        # Emoji 字体回退：defaults 分支也启用，避免 PDF 中 emoji 乱码
+        emoji_candidates = []
+        cfg_emoji = pdf_config.get('emoji_font')
+        if isinstance(cfg_emoji, list):
+            emoji_candidates.extend([str(x) for x in cfg_emoji if x])
+        elif isinstance(cfg_emoji, str) and cfg_emoji.strip():
+            emoji_candidates.append(cfg_emoji.strip())
+        for e in system_fonts.get('emoji_fonts', []):
+            if e not in emoji_candidates:
+                emoji_candidates.append(e)
+        emoji_setup_tex_lines = [
+            "\\newif\\ifemojiavailable",
+            "\\emojiavailablefalse",
+        ]
+        for name in emoji_candidates:
+            safe_name = name.replace('\\\\', r'\\\\').replace('{', '').replace('}', '')
+            emoji_setup_tex_lines.append(
+                f"\\IfFontExistsTF{{{safe_name}}}{{\\newfontfamily\\EmojiFont{{{safe_name}}}\\emojiavailabletrue}}{{}}"
+            )
+        emoji_setup_tex_lines.append(
+            f"\\ifemojiavailable\\setmonofont[Scale=0.85,FallbackFamilies={{EmojiFont}}]{{{mono_font}}}\\else\\setmonofont[Scale=0.85]{{{mono_font}}}\\fi"
+        )
+        emoji_setup_tex = "\n".join(emoji_setup_tex_lines)
+
+        header_content = (
+            "\\usepackage{fontspec}\n"
+            "\\usepackage{xunicode}\n"
+            "\\usepackage{xeCJK}\n"
+            "\\usepackage{fvextra}\n"
+            "\\usepackage[most]{tcolorbox}\n"
+            "\\usepackage{graphicx}\n"
+            "\\usepackage{float}\n"
+            "\\usepackage{sectsty}\n"
+            "\\usepackage{hyperref}\n"
+            "\\usepackage{longtable}\n"
+            "\\usepackage{ragged2e}\n"
+            "\\AtBeginDocument{\\justifying}\n"
+            "\\usepackage{listings}\n"
+            "\\hypersetup{pdftitle={" + repo_name + " 代码文档}, pdfauthor={Repo-to-PDF Generator}, colorlinks=true, linkcolor=blue, urlcolor=blue}\n"
+            "\\defaultfontfeatures{Mapping=tex-text}\n"
+            "\\setCJKmainfont{" + main_font + "}\n"
+            "\\setCJKsansfont{" + sans_font + "}\n"
+            "\\setCJKmonofont{" + main_font + "}\n"
+            "\\XeTeXlinebreaklocale \"zh\"\n"
+            "\\XeTeXlinebreakskip = 0pt plus 1pt\n"
+            "\\allsectionsfont{\\CJKfamily{sf}}\n"
+            "\\DeclareGraphicsExtensions{.png,.jpg,.jpeg,.gif}\n"
+            "\\graphicspath{{./images/}}\n"
+            "\\usepackage{adjustbox}\n"
+            "\\setkeys{Gin}{width=0.8\\linewidth,keepaspectratio}\n"
+            "\\RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}\n"
+            "\\fvset{breaklines=true, breakanywhere=true, breakafter=\\\\}\n"
+            "\\renewenvironment{Shaded}{\\begin{tcolorbox}[breakable,boxrule=0pt,frame hidden,sharp corners]}{\\end{tcolorbox}}\n"
+            "% Emoji 图片宏（用于代码块内插入 PNG）\n"
+            "\\newcommand{\\emojiimg}[1]{\\raisebox{-0.2ex}{\\includegraphics[height=1.0em]{images/emoji/#1}}}\n"
+        )
+        # 将 Emoji 设置追加到 header 中（在字体设置之后即可）
+        header_content = header_content + "\n" + emoji_setup_tex + "\n"
         
         with open(header_tex_path, 'w', encoding='utf-8') as f:
             f.write(header_content)
@@ -1357,64 +1747,92 @@ variables:
             
             # 创建 header.tex 文件
             header_tex_path = self.temp_dir / "header.tex"
-            header_content = f"""% 设置字体
-\\usepackage{{fontspec}}
-\\usepackage{{xeCJK}}
-\\setCJKmainfont{{{main_font}}}
-\\setCJKsansfont{{{sans_font}}}
-\\setCJKmonofont{{{main_font}}}
-\\setmonofont{{{mono_font}}}
+            # 构建 Emoji 字体回退设置（在等宽字体中启用，保证代码块内表情不乱码）
+            emoji_candidates = []
+            cfg_emoji = pdf_config.get('emoji_font')
+            if isinstance(cfg_emoji, list):
+                emoji_candidates.extend([str(x) for x in cfg_emoji if x])
+            elif isinstance(cfg_emoji, str) and cfg_emoji.strip():
+                emoji_candidates.append(cfg_emoji.strip())
+            # 追加系统候选字体
+            for e in system_fonts.get('emoji_fonts', []):
+                if e not in emoji_candidates:
+                    emoji_candidates.append(e)
 
-% 布局设置
-\\linespread{{{linespread}}}
-\\setlength{{\\parskip}}{{{parskip}}}
+            # 生成 TeX 条件判断代码，尝试依次加载候选的 Emoji 字体
+            emoji_setup_tex_lines = [
+                "% Emoji 字体设置",
+                "\\newif\\ifemojiavailable",
+                "\\emojiavailablefalse",
+            ]
+            for name in emoji_candidates:
+                safe_name = name.replace('\\', r'\\').replace('{', '').replace('}', '')
+                emoji_setup_tex_lines.append(
+                    f"\\IfFontExistsTF{{{safe_name}}}{{\\newfontfamily\\EmojiFont{{{safe_name}}}\\emojiavailabletrue}}{{}}"
+                )
+            # 如果找到 Emoji 字体，则创建一个 \emoji 命令用于切换字体
+            emoji_setup_tex_lines.append("\\ifemojiavailable\\newcommand{\\emoji}[1]{{{\\EmojiFont #1}}}\\else\\newcommand{\\emoji}[1]{#1}\\fi")
+            emoji_setup_tex = "\n".join(emoji_setup_tex_lines)
 
-% 中文支持
-\\XeTeXlinebreaklocale "zh"
-\\XeTeXlinebreakskip = 0pt plus 1pt
-
-% 代码高亮
-\\usepackage{{fvextra}}
-\\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}, fontsize={code_fontsize}}}
-\\fvset{{breaklines=true, breakanywhere=true, fontsize={code_fontsize}, tabsize=2}}
-
-% 使用 listings 包处理特殊字符
-\\usepackage{{listings}}
-\\lstset{{
-  basicstyle=\\ttfamily{code_fontsize},
-  breaklines=true,
-  breakatwhitespace=false,
-  keepspaces=true,
-  showstringspaces=false,
-  literate={{\\\\}}{{\\textbackslash}}1
-}}
-
-% 防止 Dimension too large 错误
-\\maxdeadcycles=200
-\\emergencystretch=5em
-\\usepackage{{etoolbox}}
-\\makeatletter
-\\patchcmd{{\\@verbatim}}
-  {{\\verbatim@font}}
-  {{\\verbatim@font\\small}}
-  {{}}{{}}
-\\makeatother
-
-% 页面设置
-\\usepackage{{graphicx}}
-\\DeclareGraphicsExtensions{{.png,.jpg,.jpeg,.gif}}
-\\graphicspath{{{{./images/}}}}
-
-% 超链接
-\\usepackage{{hyperref}}
-\\hypersetup{{
-    pdftitle={{{repo_path.name} 代码文档}},
-    pdfauthor={{Repo-to-PDF Generator}},
-    colorlinks=true,
-    linkcolor=blue,
-    urlcolor=blue
-}}
-"""
+            header_lines = []
+            header_lines.append("% 设置字体")
+            header_lines.append("\\usepackage{fontspec}")
+            header_lines.append("\\usepackage{xeCJK}")
+            header_lines.append("\\setCJKmainfont{" + main_font + "}")
+            header_lines.append("\\setCJKsansfont{" + sans_font + "}")
+            header_lines.append("\\setCJKmonofont{" + main_font + "}")
+            header_lines.append("% Emoji 字体和命令")
+            header_lines.append(emoji_setup_tex)
+            header_lines.append("% 等宽字体（用于代码）")
+            header_lines.append("\\setmonofont{" + mono_font + "}")
+            header_lines.append("")
+            header_lines.append("% 布局设置")
+            header_lines.append("\\linespread{" + linespread + "}")
+            header_lines.append("\\setlength{\\parskip}{" + parskip + "}")
+            header_lines.append("")
+            header_lines.append("% 中文支持")
+            header_lines.append("\\XeTeXlinebreaklocale \"zh\"")
+            header_lines.append("\\XeTeXlinebreakskip = 0pt plus 1pt")
+            header_lines.append("")
+            header_lines.append("% 代码环境（使用 fancyvrb 提供的 Verbatim，并让 verbatim 支持选择性命令执行）")
+            header_lines.append("\\usepackage{fvextra}")
+            # 使用少见字符 '§' 作为转义起始，避免普通反斜线被当作命令
+            # 全局 verbatim 不启用 commandchars，减少复杂度；仅 CodeBlock 允许命令执行
+            header_lines.append("\\RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,obeytabs,tabsize=2, fontsize=" + code_fontsize + "}")
+            # 提供一个稳定的 CodeBlock 环境，避免外部包覆盖 verbatim 行为（更激进的折行与更小字号）
+            # 专用 CodeBlock：使用不与代码冲突的分组符号 « »
+            header_lines.append("\\newenvironment{CodeBlock}{\\Verbatim[breaklines,breakanywhere,obeytabs,tabsize=2,commandchars=§«», fontsize=\\footnotesize]}{\\endVerbatim}")
+            header_lines.append("\\fvset{breaklines=true, breakanywhere=true, fontsize=" + code_fontsize + ", tabsize=2}")
+            header_lines.append("% Emoji 图片宏（用于代码块内插入 PNG）")
+            header_lines.append("\\newcommand{\\emojiimg}[1]{\\raisebox{-0.2ex}{\\includegraphics[height=1.0em]{temp_conversion_files/images/emoji/#1}}}")
+            header_lines.append("")
+            header_lines.append("")
+            header_lines.append("% 防止 Dimension too large 错误")
+            header_lines.append("\\maxdeadcycles=200")
+            header_lines.append("\\emergencystretch=5em")
+            header_lines.append("\\usepackage{etoolbox}")
+            header_lines.append("\\makeatletter")
+            header_lines.append("\\patchcmd{\\@verbatim}")
+            header_lines.append("  {\\verbatim@font}")
+            header_lines.append("  {\\verbatim@font\\small}")
+            header_lines.append("  {}{}")
+            header_lines.append("\\makeatother")
+            header_lines.append("")
+            header_lines.append("% 页面设置")
+            header_lines.append("\\usepackage{graphicx}")
+            header_lines.append("\\DeclareGraphicsExtensions{.png,.jpg,.jpeg,.gif}")
+            header_lines.append("\\graphicspath{{./images/}}")
+            header_lines.append("")
+            header_lines.append("% 超链接")
+            header_lines.append("\\usepackage{hyperref}")
+            header_lines.append("\\hypersetup{")
+            header_lines.append("    pdftitle={" + repo_path.name + " 代码文档},")
+            header_lines.append("    pdfauthor={Repo-to-PDF Generator},")
+            header_lines.append("    colorlinks=true,")
+            header_lines.append("    linkcolor=blue,")
+            header_lines.append("    urlcolor=blue")
+            header_lines.append("}")
+            header_content = "\n".join(header_lines) + "\n"
             
             with open(header_tex_path, 'w', encoding='utf-8') as f:
                 f.write(header_content)
@@ -1422,13 +1840,13 @@ variables:
             # 调用 pandoc 进行转换，添加更多选项
             cmd = [
                 'pandoc',
-                '-f', 'markdown+pipe_tables+grid_tables+table_captions+smart+fenced_code_blocks+fenced_code_attributes+backtick_code_blocks+inline_code_attributes+line_blocks+fancy_lists+definition_lists+example_lists+task_lists+citations+footnotes+smart+superscript+subscript+raw_html+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash-raw_tex+implicit_figures+link_attributes+bracketed_spans+native_divs+native_spans+raw_attribute+header_attributes+auto_identifiers+autolink_bare_uris+emoji+hard_line_breaks+escaped_line_breaks+blank_before_blockquote+blank_before_header+space_in_atx_header+strikeout+east_asian_line_breaks',  # 禁用 raw_tex 避免反斜杠被解释为 LaTeX 命令
+                '-f', 'markdown+pipe_tables+grid_tables+table_captions+smart+fenced_code_blocks+fenced_code_attributes+backtick_code_blocks+inline_code_attributes+line_blocks+fancy_lists+definition_lists+example_lists+task_lists+citations+footnotes+smart+superscript+subscript+raw_html+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash+raw_tex+implicit_figures+link_attributes+bracketed_spans+native_divs+native_spans+raw_attribute+header_attributes+auto_identifiers+autolink_bare_uris+emoji+hard_line_breaks+escaped_line_breaks+blank_before_blockquote+blank_before_header+space_in_atx_header+strikeout+east_asian_line_breaks',
                 '--pdf-engine=xelatex',
+                '--no-highlight',
                 '--wrap=none',
                 '--toc',
                 '--toc-depth=2',
-                '--highlight-style=tango',  # 显式指定代码高亮样式
-                '-V', 'documentclass=article',
+                                '-V', 'documentclass=article',
                 '-V', f'title={repo_path.name} 代码文档',
                 '-V', 'date=\\today',
                 '-V', 'geometry:margin=0.5in',

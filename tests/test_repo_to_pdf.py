@@ -622,5 +622,159 @@ class TestTemplateSystem(unittest.TestCase):
         self.assertIsNone(converter.template)
 
 
+class TestEmojiAndHeader(unittest.TestCase):
+    """Additional tests for emoji handling and header extraction"""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.config_path = Path(self.test_dir) / "config.yaml"
+        config = {
+            'repository': {'url': 'test', 'branch': 'main'},
+            'workspace_dir': './workspace',
+            'output_dir': './output',
+            'pdf_settings': {
+                'render_header_comments_outside_code': True,
+                'emoji_download': False,
+                'max_line_length': 80,
+            },
+        }
+        with open(self.config_path, 'w') as f:
+            yaml.dump(config, f)
+        self.converter = RepoPDFConverter(self.config_path)
+        self.converter.temp_dir = Path(self.test_dir) / "temp"
+        self.converter.temp_dir.mkdir()
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_extract_header_comment_c_like(self):
+        content = """// Title: Demo 😀\n// Description: Example file\n\nint main() { return 0; }\n"""
+        header, rest = self.converter._extract_header_comment(content, '.c')
+        self.assertIn('Title: Demo', header)
+        self.assertTrue(rest.startswith('int main()'))
+
+    def test_extract_header_comment_block(self):
+        content = """/*\n * Title: Demo\n */\n// More\n\nlet x = 1;\n"""
+        header, rest = self.converter._extract_header_comment(content, '.js')
+        self.assertIn('Title: Demo', header)
+        self.assertTrue(rest.startswith('let x'))
+
+    def test_extract_header_comment_sharp(self):
+        content = """# Title: Test\n# Author: You\n\nprint('ok')\n"""
+        header, rest = self.converter._extract_header_comment(content, '.py')
+        self.assertIn('Author: You', header)
+        self.assertTrue(rest.startswith("print"))
+
+    def test_replace_emoji_in_text_and_code(self):
+        # Mock ensure to avoid network and conversion
+        with patch.object(self.converter, '_ensure_emoji_png', return_value='1f600.png'):
+            text = self.converter._replace_emoji_with_images('Hello 😀', in_code=False)
+            self.assertIn('\\emojiimg{1f600.png}', text)
+            code = self.converter._replace_emoji_with_images('Hello 😀', in_code=True)
+            self.assertIn('§emojiimg{1f600.png}', code)
+
+    def test_process_file_header_rendered_outside_code(self):
+        src = Path(self.test_dir) / 'demo.go'
+        src.write_text("""// Hello 😀\n\npackage main\n\nfunc main(){}\n""")
+        with patch.object(self.converter, '_ensure_emoji_png', return_value='1f60a.png'):
+            out = self.converter.process_file(src, Path(self.test_dir))
+        # Header emoji should appear as text macro, not code macro
+        self.assertIn('\\emojiimg{1f60a.png}', out)
+        self.assertNotIn('§emojiimg{1f60a.png}', out.split('```')[0])
+        # Code should be a fenced block (no CodeBlock) because code has no emoji
+        self.assertIn('```go', out)
+        self.assertNotIn('\\begin{CodeBlock}', out)
+
+    def test_emoji_download_disabled_returns_original(self):
+        # No cache and downloads disabled -> original emoji remains
+        s = self.converter._replace_emoji_with_images('X 😀 Y', in_code=False)
+        self.assertIn('😀', s)
+
+
+class TestAdditionalCoverage(unittest.TestCase):
+    """Boost coverage for helper utilities"""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.config_path = Path(self.test_dir) / "config.yaml"
+        config = {
+            'repository': {'url': 'test', 'branch': 'main'},
+            'workspace_dir': './workspace',
+            'output_dir': './output',
+            'pdf_settings': {
+                'emoji_download': False,
+                'max_line_length': 50,
+                'split_large_files': True,
+            },
+        }
+        with open(self.config_path, 'w') as f:
+            yaml.dump(config, f)
+        self.converter = RepoPDFConverter(self.config_path)
+        self.converter.temp_dir = Path(self.test_dir) / "temp"
+        self.converter.temp_dir.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_create_temp_markdown(self):
+        md_path = self.converter.create_temp_markdown()
+        self.assertTrue(md_path.exists())
+
+    def test_create_pandoc_yaml(self):
+        # Just ensure the file is written and contains expected basics
+        path = self.converter.create_pandoc_yaml('demo')
+        self.assertTrue(path.exists())
+        header = (self.converter.temp_dir / 'header.tex')
+        self.assertTrue(header.exists())
+        text = header.read_text(encoding='utf-8')
+        self.assertIn('usepackage', text)
+        self.assertIn('graphicx', text)
+
+    def test_download_remote_image_png(self):
+        with patch('requests.get') as mock_get:
+            class Resp:
+                status_code = 200
+                headers = {'Content-Type': 'image/png'}
+                content = b'abc'
+                def raise_for_status(self):
+                    return None
+            mock_get.return_value = Resp()
+            images_dir = self.converter.temp_dir / 'images'
+            rel = self.converter._download_remote_image('https://example.com/a.png', images_dir)
+            self.assertTrue(rel.startswith('images/'))
+
+    def test_download_remote_image_svg(self):
+        with patch('requests.get') as mock_get:
+            class Resp:
+                status_code = 200
+                headers = {'Content-Type': 'image/svg+xml'}
+                text = '<svg width="10" height="10"></svg>'
+                content = text.encode()
+                def raise_for_status(self):
+                    return None
+            mock_get.return_value = Resp()
+            # Inject fake cairosvg module
+            import types, sys
+            fake = types.SimpleNamespace(svg2png=lambda **kwargs: (self.converter.temp_dir / 'images').mkdir(exist_ok=True) or (self.converter.temp_dir / 'images' / 'tmp.png').write_bytes(b'1'))
+            original = sys.modules.get('cairosvg')
+            sys.modules['cairosvg'] = fake
+            try:
+                images_dir = self.converter.temp_dir / 'images'
+                rel = self.converter._download_remote_image('https://example.com/a.svg', images_dir)
+                self.assertTrue(rel.startswith('images/'))
+            finally:
+                if original is None:
+                    sys.modules.pop('cairosvg', None)
+                else:
+                    sys.modules['cairosvg'] = original
+
+    def test_process_large_file_segments(self):
+        # Build content to exceed threshold
+        long_line = 'a' * 10
+        lines = [long_line for _ in range(1800)]
+        out = self.converter._process_large_file('big.txt', lines, 'text')
+        self.assertIn('注意：此文件包含', out)
+
+
 if __name__ == '__main__':
     unittest.main()

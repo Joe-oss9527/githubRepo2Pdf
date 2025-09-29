@@ -149,6 +149,9 @@ ifeq ($(UNAME_S),Darwin)
 	done
 	@command -v inkscape >/dev/null 2>&1 || brew install inkscape
 	@command -v xelatex >/dev/null 2>&1 || brew install --cask mactex-no-gui
+	@# 为稳定 Emoji 渲染，推荐安装 Noto Emoji（黑白）
+	@brew tap homebrew/cask-fonts >/dev/null 2>&1 || true
+	@brew list --cask font-noto-emoji >/dev/null 2>&1 || brew install --cask font-noto-emoji
 else ifeq ($(UNAME_S),Linux)
 	@# Linux/WSL2
 	@if [ "$(IS_WSL)" = "1" ]; then \
@@ -160,7 +163,7 @@ else ifeq ($(UNAME_S),Linux)
 			pandoc texlive-xetex texlive-fonts-recommended \
 			texlive-fonts-extra texlive-lang-chinese texlive-lang-greek \
 			python3-venv python3-pip libcairo2-dev inkscape librsvg2-bin \
-			fonts-noto-cjk fonts-wqy-microhei; \
+			fonts-noto-cjk fonts-wqy-microhei fonts-noto-emoji; \
 	else \
 		echo "请手动安装: pandoc texlive-xetex python3-venv cairo inkscape"; \
 	fi

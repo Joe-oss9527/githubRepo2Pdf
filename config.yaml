@@ -1,6 +1,6 @@
 # 仓库配置
 repository:
-  url: "https://github.com/bmadcode/BMAD-METHOD.git"
+  url: "https://github.com/gofiber/fiber.git"
   branch: "main"
 
 # 所有路径都相对于项目根目录
@@ -16,8 +16,16 @@ pdf_settings:
   margin: "margin=1in"
   main_font: "Noto Serif CJK SC"
   mono_font: "DejaVu Sans Mono"
+  # 可选：为 emoji 指定字体（字符串或列表，按优先级）
+  # 例：emoji_font: "Apple Color Emoji"  或  emoji_font: ["Noto Color Emoji", "Noto Emoji"]
+  # 未设置时，程序会自动尝试常见字体（Apple/Noto/Segoe/Symbola）
+  emoji_font: 
   highlight_style: "monochrome"
   split_large_files: true  # 将大文件分割成多个部分而不是截断
+  render_header_comments_outside_code: true  # 将文件头注释渲染为正文（非代码块）
+  code_block_strategy: normal  # 代码块策略：normal | codeblock_for_emoji（必要时用 CodeBlock）
+  emoji_download: true  # 允许下载 Twemoji 资源（离线可关闭以复用缓存）
+  max_line_length: 200  # 超长行硬折行阈值，防止 Verbatim 溢出
   
   # 字体大小设置（可被设备预设覆盖）
   fontsize: "10pt"
@@ -85,7 +93,6 @@ ignores:
   - ".nuxt"
   - "vendor"
   - ".vaunt"
-  - ".github"
 
   # 锁定文件
   - "package-lock.json"
@@ -105,6 +112,7 @@ ignores:
   - "pdm.lock"        # Python PDM
   - "requirements.txt.lock" # Python pip-tools
   - ".mockery.yaml"
+  - "pnpm-workspace.yaml"
 
   # 缓存和临时文件
   - ".git"
@@ -127,6 +135,5 @@ ignores:
   - ".settings"
 
   # 其他
-  - "docs/"
   - "docs/swagger.json"
   - "docs/swagger.yaml"
