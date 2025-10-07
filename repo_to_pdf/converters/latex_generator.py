@@ -142,6 +142,11 @@ variables:
         linespread = self.config.pdf_settings.linespread
         parskip = self.config.pdf_settings.parskip
 
+        # Get code block visual settings
+        code_bg = self.config.pdf_settings.code_block_bg
+        code_border = self.config.pdf_settings.code_block_border
+        code_padding = self.config.pdf_settings.code_block_padding
+
         # Build header content
         header_content = f"""% LaTeX header for repo-to-pdf
 % Generated automatically - do not edit manually
@@ -204,8 +209,23 @@ variables:
 \\DefineVerbatimEnvironment{{Highlighting}}{{Verbatim}}{{breaklines,commandchars=\\\\\\{{\\}}, fontsize={code_fontsize}}}
 \\fvset{{breaklines=true, breakanywhere=true, breakafter=\\\\, fontsize={code_fontsize}}}
 
-% Shaded code block environment
-\\renewenvironment{{Shaded}}{{\\begin{{tcolorbox}}[breakable,boxrule=0pt,frame hidden,sharp corners]}}{{\\end{{tcolorbox}}}}
+% Shaded code block environment with enhanced styling
+\\renewenvironment{{Shaded}}{{%
+    \\begin{{tcolorbox}}[
+        breakable,
+        enhanced,
+        boxrule=0.5pt,
+        colback={code_bg},
+        colframe={code_border},
+        arc=2pt,
+        boxsep={code_padding},
+        left=3pt,
+        right=3pt,
+        top=3pt,
+        bottom=3pt,
+        sharp corners=south
+    ]%
+}}{{\\end{{tcolorbox}}}}
 
 % ============================================================================
 % Emoji support

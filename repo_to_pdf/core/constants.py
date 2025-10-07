@@ -387,7 +387,7 @@ LOG_DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 PANDOC_TOC_DEPTH: int = 2
 """Table of contents depth for pandoc"""
 
-PANDOC_HIGHLIGHT_STYLE: str = "monochrome"
+PANDOC_HIGHLIGHT_STYLE: str = "tango"  # Changed from monochrome for better readability
 """Default syntax highlighting style"""
 
 PANDOC_PDF_ENGINE: str = "xelatex"

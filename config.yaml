@@ -20,7 +20,7 @@ pdf_settings:
   # 例：emoji_font: "Apple Color Emoji"  或  emoji_font: ["Noto Color Emoji", "Noto Emoji"]
   # 未设置时，程序会自动尝试常见字体（Apple/Noto/Segoe/Symbola）
   emoji_font: 
-  highlight_style: "monochrome"
+  highlight_style: "tango"  # Options: tango, kate, pygments, zenburn, espresso, breezedark
   split_large_files: true  # 将大文件分割成多个部分而不是截断
   render_header_comments_outside_code: true  # 将文件头注释渲染为正文（非代码块）
   code_block_strategy: normal  # 代码块策略：normal | codeblock_for_emoji（必要时用 CodeBlock）

@@ -133,6 +133,21 @@ class PDFSettings(BaseModel):
         le=500,
         description="Maximum line length before hard wrapping"
     )
+
+    # Code block visual enhancement settings
+    code_block_bg: str = Field(
+        default="gray!5",
+        description="Code block background color (LaTeX color spec, e.g., 'gray!5', 'blue!3')"
+    )
+    code_block_border: str = Field(
+        default="gray!30",
+        description="Code block border color (LaTeX color spec, e.g., 'gray!30', 'blue!20')"
+    )
+    code_block_padding: str = Field(
+        default="5pt",
+        description="Code block padding (LaTeX dimension, e.g., '5pt', '3mm')"
+    )
+
     include_tree: bool = Field(
         default=True,
         description="Include directory tree in output"
