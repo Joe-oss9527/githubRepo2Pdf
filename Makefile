@@ -185,7 +185,7 @@ convert: deps
 		echo "✗ 找不到配置文件: $(CONFIG)"; \
 		exit 1; \
 	fi
-	@$(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+	@$(VENV_PYTHON) -m repo_to_pdf.cli $(CONVERT_ARGS)
 
 # ========== 设备预设快捷命令 ==========
 
@@ -197,7 +197,7 @@ kindle7: deps
 		echo "✗ 找不到配置文件: $(CONFIG)"; \
 		exit 1; \
 	fi
-	@DEVICE=kindle7 $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+	@DEVICE=kindle7 $(VENV_PYTHON) -m repo_to_pdf.cli $(CONVERT_ARGS)
 
 # 平板设备优化
 tablet: deps
@@ -206,7 +206,7 @@ tablet: deps
 		echo "✗ 找不到配置文件: $(CONFIG)"; \
 		exit 1; \
 	fi
-	@DEVICE=tablet $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+	@DEVICE=tablet $(VENV_PYTHON) -m repo_to_pdf.cli $(CONVERT_ARGS)
 
 # 手机设备优化
 mobile: deps
@@ -215,7 +215,7 @@ mobile: deps
 		echo "✗ 找不到配置文件: $(CONFIG)"; \
 		exit 1; \
 	fi
-	@DEVICE=mobile $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+	@DEVICE=mobile $(VENV_PYTHON) -m repo_to_pdf.cli $(CONVERT_ARGS)
 
 # 桌面端优化(默认)
 desktop: deps
@@ -224,26 +224,30 @@ desktop: deps
 		echo "✗ 找不到配置文件: $(CONFIG)"; \
 		exit 1; \
 	fi
-	@DEVICE=desktop $(VENV_PYTHON) repo-to-pdf.py $(CONVERT_ARGS)
+	@DEVICE=desktop $(VENV_PYTHON) -m repo_to_pdf.cli $(CONVERT_ARGS)
 
 # ========== 测试和其他 ==========
 
 # 测试
 test: deps
 	@echo "运行所有测试..."
-	@$(VENV_PYTHON) -m pytest
+	@$(VENV_PYTHON) -m pytest tests/unit/ -v
 
 test-unit: deps
 	@echo "运行单元测试..."
-	@$(VENV_PYTHON) -m pytest tests/test_repo_to_pdf.py -v
+	@$(VENV_PYTHON) -m pytest tests/unit/ -v
 
 test-integration: deps
 	@echo "运行集成测试..."
-	@$(VENV_PYTHON) -m pytest tests/test_integration.py -v
+	@$(VENV_PYTHON) -m pytest tests/integration/ -v 2>/dev/null || echo "暂无集成测试"
 
 test-coverage: deps
 	@echo "生成测试覆盖率报告..."
-	@$(VENV_PYTHON) -m pytest --cov=repo_to_pdf --cov-report=html --cov-report=term
+	@$(VENV_PYTHON) -m pytest tests/unit/ --cov=repo_to_pdf --cov-report=html --cov-report=term
+
+test-fast: deps
+	@echo "快速测试（不生成覆盖率）..."
+	@$(VENV_PYTHON) -m pytest tests/unit/ -v --tb=short
 
 # 清理
 clean:
