@@ -2,22 +2,27 @@
 
 一个将 GitHub 仓库代码转换为 PDF 文档的工具。支持语法高亮、中文显示，并且可以自定义配置。
 
+**版本**: 2.0 - 模块化架构，类型安全，生产就绪
+
 ## 功能特点
 
-- 支持多种编程语言的语法高亮
-- 自动生成目录树和代码统计
-- 支持中文显示（跨平台字体自动检测）
-- 可配置的文件过滤
-- 自动处理大文件和长行
-- 优雅的代码块展示
-- 智能的日志输出控制
-- 进度条显示
-- 流式处理，避免内存溢出
-- 错误恢复机制
-- 自定义模板系统
-- 设备预设系统（支持Kindle、平板、手机等设备优化）
-- 完整的单元测试和集成测试
-- 55%+ 测试覆盖率（持续改进中）
+### 核心功能
+- 🎨 **专业代码高亮**: Tango 主题，支持 30+ 编程语言，可自定义代码块样式
+- 📊 **自动生成文档结构**: 目录树和代码统计
+- 🌏 **完整中文支持**: 跨平台字体自动检测（macOS/Linux/WSL）
+- 🖼️ **智能图片处理**: SVG 转 PNG，远程图片下载，绝对路径解析，HTML 标签转换
+- 😀 **Emoji 支持**: Twemoji PNG 缓存 + 字体回退，代码中也能显示 emoji
+- 📱 **设备预设**: Kindle、平板、手机、桌面端优化配置
+
+### 技术特性
+- ⚡ **模块化架构**: 21 个清晰职责的模块，易于维护和扩展
+- 🔒 **类型安全**: Pydantic 配置验证，100% mypy 类型覆盖
+- 🧪 **测试保障**: pytest 测试套件，25%+ 覆盖率（持续改进中）
+- 🔧 **代码质量**: pre-commit hooks (black, isort, flake8, mypy, bandit)
+- 📝 **智能日志**: 三级日志控制（normal/verbose/quiet）
+- 🚀 **高性能**: 流式处理，避免内存溢出，浅克隆优化
+- 🛡️ **容错处理**: 错误恢复机制，优雅降级
+- 🎯 **灵活配置**: 自定义模板系统，丰富的配置选项
 
 ## 系统要求
 
@@ -105,6 +110,41 @@ sudo apt-get install pandoc texlive-xetex texlive-fonts-recommended texlive-font
 
 生成的 PDF 文件将保存在 `repo-pdfs` 目录下。
 
+## 项目结构
+
+```
+githubRepo2Pdf/
+├── repo_to_pdf/           # 核心代码包（21个模块）
+│   ├── cli.py            # 命令行入口
+│   ├── converter.py      # 主转换器
+│   ├── core/             # 核心配置和常量
+│   │   ├── config.py     # Pydantic配置模型
+│   │   ├── constants.py  # 常量定义
+│   │   └── exceptions.py # 自定义异常
+│   ├── git/              # Git操作
+│   │   └── repo_manager.py
+│   ├── processors/       # 文件处理
+│   │   ├── file_processor.py     # 文件过滤
+│   │   ├── code_processor.py     # 代码处理
+│   │   └── markdown_processor.py # Markdown处理
+│   ├── converters/       # 格式转换
+│   │   ├── image_converter.py    # 图片转换
+│   │   ├── emoji_handler.py      # Emoji处理
+│   │   └── latex_generator.py    # LaTeX生成
+│   └── stats/            # 统计分析
+│       ├── directory_tree.py
+│       └── code_stats.py
+├── templates/            # PDF模板
+│   ├── default.yaml
+│   ├── kindle.yaml
+│   └── technical.yaml
+├── tests/                # 测试套件
+│   └── unit/
+├── config.yaml           # 配置文件
+├── Makefile              # 构建工具
+└── README.md             # 本文件
+```
+
 ## 模板系统
 
 工具提供了灵活的模板系统，可以自定义 PDF 的结构和样式：
@@ -180,39 +220,44 @@ Kindle预设专门针对7英寸E-ink屏幕进行了优化：
 
 - **紧凑布局**：0.4英寸页边距，最大化内容显示区域
 - **专家推荐字体**：11pt主字体，`\small`(10pt)代码字体，遵循专业阅读标准
-- **高对比度**：使用monochrome语法高亮，适合E-ink显示
+- **清晰高亮**：Tango 语法高亮主题，代码结构清晰易读
 - **舒适间距**：标准1.0倍行间距，5pt段落间距，确保阅读舒适度
 - **简化结构**：最多2层目录树，减少导航复杂度
+- **长行处理**：自动硬折行（60字符），防止内容溢出
 
 ## 测试
 
-项目包含完整的测试套件，确保代码质量和稳定性：
+项目采用 pytest 测试框架，确保代码质量和稳定性：
 
 ### 运行测试
 
 ```bash
-# 运行所有测试
+# 运行所有单元测试
 make test
 
-# 运行单元测试
+# 运行单元测试（显式）
 make test-unit
-
-# 运行集成测试  
-make test-integration
 
 # 生成测试覆盖率报告
 make test-coverage
-
-# 使用测试脚本
-./run_tests.sh
 ```
 
 ### 测试覆盖
 
-- 单元测试覆盖核心功能模块
-- 集成测试验证完整转换流程
-- 测试覆盖率要求：50%+（当前：55%）
-- 支持 CI/CD 自动化测试
+- ✅ **单元测试**: 覆盖核心功能模块（config, file_processor, converters 等）
+- ✅ **测试覆盖率**: 25%+（持续改进中，目标 50%+）
+- ✅ **CI/CD**: GitHub Actions 自动化测试
+- ✅ **代码质量**: pre-commit hooks 确保代码标准
+
+### 测试组织
+
+```
+tests/
+├── unit/                    # 单元测试
+│   ├── test_config.py      # 配置模块测试
+│   └── test_file_processor.py  # 文件处理测试
+└── test_config.yaml        # 测试配置
+```
 
 ## 日志级别控制
 
@@ -258,8 +303,13 @@ pdf_settings:
   code_fontsize: "\\small"       # 代码块字体大小
   linespread: "1.0"              # 行间距倍数
   parskip: "6pt"                 # 段落间距
-  highlight_style: "monochrome"  # 代码高亮主题
+  highlight_style: "tango"       # 代码高亮主题（推荐：tango, kate, pygments, zenburn）
   split_large_files: true        # 将大文件分割成多个部分而不是截断
+
+  # 代码块视觉样式（可选）
+  code_block_bg: "gray!5"        # 代码块背景色
+  code_block_border: "gray!30"   # 代码块边框色
+  code_block_padding: "5pt"      # 代码块内边距
 
 # 忽略的文件或目录
 ignores:
@@ -319,6 +369,30 @@ ignores:
    - Kindle用户推荐使用 `make kindle` 获得最佳阅读体验
    - 可以通过修改配置文件中的 `device_presets` 来自定义设备配置
    - 环境变量 `DEVICE` 的优先级高于配置文件中的 `device_preset`
+
+## 更新日志
+
+### v2.0 (2025-10)
+- 🎉 **重大重构**: 从单文件 1944 行代码重构为 21 个模块化包
+- 🔒 **类型安全**: Pydantic 配置 + 100% mypy 类型覆盖
+- 🎨 **代码高亮**: 从 monochrome 升级到 tango，可自定义代码块样式
+- 🖼️ **图片处理**: 增强的路径解析，HTML 标签转换，优雅错误处理
+- 😀 **Emoji 支持**: Twemoji PNG + 字体回退
+- 🧪 **测试框架**: 完整的 pytest 测试套件
+- 🔧 **代码质量**: pre-commit hooks 自动化检查
+
+### v1.0 (2025-09)
+- 初始版本，单文件实现
+- 基本的代码转 PDF 功能
+- 设备预设支持
+
+## 开发指南
+
+详细的开发文档请参考 [CLAUDE.md](CLAUDE.md)，包含：
+- 完整的架构说明
+- 开发任务指南
+- 故障排查手册
+- 贡献指南
 
 ## License
 
