@@ -178,8 +178,8 @@ class MarkdownProcessor:
                     return f"![{alt}]({new_path})"
 
             # Process other local images (JPG, PNG, etc.)
-            # Handle absolute paths (starting with /)
-            if path.startswith("/"):
+            # Try to resolve the path for local images
+            if not path.startswith(("http://", "https://")):
                 img_path = self._resolve_image_path(path, source_file, repo_root)
                 if img_path and img_path.exists():
                     # Use relative path from repo root
@@ -191,6 +191,10 @@ class MarkdownProcessor:
                             return f"![{alt}]({rel_path})"
                         except ValueError:
                             pass
+                else:
+                    # Image not found locally, remove the reference to avoid Pandoc error
+                    logger.warning(f"Image not found, removing reference: {path}")
+                    return ""
 
             return match.group(0)
 
@@ -247,7 +251,7 @@ class MarkdownProcessor:
         return None
 
     def _process_html_images(self, content: str) -> str:
-        """Process HTML <img> tags."""
+        """Process HTML <img> tags and convert to Markdown."""
 
         def process_html_image(match: re.Match) -> str:
             tag = match.group(0)
@@ -258,14 +262,29 @@ class MarkdownProcessor:
                 return tag
 
             src = img.get("src", "")
+            alt = img.get("alt", "")
+
+            if not src:
+                return ""
+
+            # Handle remote images (keep URL or download)
+            if src.startswith(("http://", "https://")):
+                # Download remote image
+                new_path = self.image_converter.download_remote_image(src)
+                if new_path:
+                    return f"![{alt}]({new_path})"
+                # If download fails, keep original URL
+                return f"![{alt}]({src})"
+
+            # Handle local SVG
             if src.lower().endswith(".svg"):
                 new_src = self.image_converter.convert_image_to_png(
                     Path(src), self.config.project_root
                 )
-                img["src"] = new_src
-                return str(img)
+                return f"![{alt}]({new_src})"
 
-            return tag
+            # For other local images, convert to Markdown
+            return f"![{alt}]({src})"
 
         return re.sub(
             r"<img\s+[^>]+>", process_html_image, content, flags=re.IGNORECASE
