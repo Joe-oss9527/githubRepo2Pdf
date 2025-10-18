@@ -309,10 +309,11 @@ class MarkdownProcessor:
 
     def _escape_backslash_u_sequences(self, content: str) -> str:
         """
-        Escape \\UXXXXXXXX and \\uXXXX sequences outside code blocks.
+        Escape \\UXXXXXXXX, \\uXXXX, and common escape sequences outside code blocks.
 
         These sequences can be interpreted as LaTeX control sequences,
         so we need to escape them to avoid errors.
+        Common escape sequences: \\n, \\t, \\r, \\a, \\b, \\f, \\v
         """
         lines = content.splitlines()
         out = []
@@ -329,9 +330,14 @@ class MarkdownProcessor:
                     out.append(ln)
                     continue
 
-                # Escape sequences in non-code lines
+                # Escape Unicode sequences
                 ln = re.sub(r"\\U([0-9A-Fa-f]{8})", r"\\textbackslash{}U\\1", ln)
                 ln = re.sub(r"\\u([0-9A-Fa-f]{4})", r"\\textbackslash{}u\\1", ln)
+
+                # Escape common escape sequences (only if not already escaped)
+                # Match \n, \t, \r, \a, \b, \f, \v that are not preceded by another backslash
+                ln = re.sub(r"(?<!\\)\\([ntrabfv])", r"\\textbackslash{}\1", ln)
+
                 out.append(ln)
             else:
                 # In code block, just append
