@@ -110,7 +110,7 @@ class CodeProcessor:
 
         # 4. Replace emoji in code (use code-safe syntax)
         code_transformed = self.emoji_handler.replace_emoji_in_code(code_body)
-        contains_emoji = "§emojiimg" in code_transformed
+        contains_emoji = "\\emojiimg{" in code_transformed
 
         # 5. Get language for syntax highlighting
         from repo_to_pdf.core.constants import CODE_EXTENSIONS
@@ -405,17 +405,9 @@ class CodeProcessor:
         """
         head = f"\n\n# {relative_path}\n\n" + header_md
 
-        # Use CodeBlock environment for emoji
-        if contains_emoji and self.code_block_strategy in (
-            "codeblock_for_emoji",
-            "normal",
-        ):
-            return (
-                head
-                + f"```{{=latex}}\n\\begin{{CodeBlock}}\n{code_content}\n\\end{{CodeBlock}}\n```\n\n"
-            )
-        else:
-            return head + f"`````{lang}\n{code_content}\n`````\n\n"
+        # Render with regular code blocks; inline \emojiimg will be executed
+        # by the Verbatim/Highlighting environment (commandchars=\\{\\}).
+        return head + f"`````{lang}\n{code_content}\n`````\n\n"
 
     def should_skip_file(self, content: str) -> bool:
         """

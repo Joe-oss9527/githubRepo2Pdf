@@ -27,11 +27,12 @@ def get_system_fonts() -> Dict[str, str]:
             "emoji_fonts": ["Apple Color Emoji"],
         }
     else:  # Linux/WSL
+        # Prefer widely available fonts; avoid Symbola to prevent TeX fallback issues
         return {
             "main_font": "Noto Serif CJK SC",
             "sans_font": "Noto Sans CJK SC",
             "mono_font": "DejaVu Sans Mono",
-            "emoji_fonts": ["Noto Color Emoji", "Symbola"],
+            "emoji_fonts": ["Noto Color Emoji"],
         }
 
 
@@ -84,7 +85,7 @@ class LaTeXGenerator:
         # Create pandoc defaults YAML
         yaml_content = f"""# Pandoc defaults file
 pdf-engine: xelatex
-from: markdown+fenced_code_attributes+fenced_code_blocks+backtick_code_blocks-raw_tex-yaml_metadata_block-tex_math_dollars
+from: markdown+fenced_code_attributes+fenced_code_blocks+backtick_code_blocks+raw_tex-yaml_metadata_block-tex_math_dollars
 highlight-style: {highlight_style}
 
 include-in-header:
@@ -158,6 +159,7 @@ variables:
 \\usepackage{{xunicode}}
 \\usepackage{{xeCJK}}
 \\usepackage{{fvextra}}
+\\usepackage{{xstring}}
 \\usepackage[most]{{tcolorbox}}
 \\usepackage{{graphicx}}
 \\usepackage{{float}}
@@ -231,7 +233,17 @@ variables:
 % Emoji support
 % ============================================================================
 % Emoji image macro (for inserting PNG in code blocks)
-\\newcommand{{\\emojiimg}}[1]{{\\raisebox{{-0.2ex}}{{\\includegraphics[height=1.0em]{{images/emoji/#1}}}}}}
+% Be tolerant if the argument omits the .png suffix
+\\newcommand{{\\emojiimg}}[1]{{%
+  \\begingroup
+  \\def\\emfilename{{#1}}%
+  \\IfEndWith{{\\emfilename}}{{.png}}{{%
+    \\raisebox{{-0.2ex}}{{\\includegraphics[height=1.0em]{{images/emoji/#1}}}}%
+  }}{{%
+    \\raisebox{{-0.2ex}}{{\\includegraphics[height=1.0em]{{images/emoji/#1.png}}}}%
+  }}%
+  \\endgroup
+}}
 
 % Emoji font fallback setup
 {emoji_setup_tex}

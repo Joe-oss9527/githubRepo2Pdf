@@ -237,10 +237,10 @@ class EmojiHandler:
                 png_filename = self.ensure_emoji_png(sequence)
 
                 if png_filename:
-                    if in_code:
-                        return f"§emojiimg«{png_filename}»"
-                    else:
-                        return f"\\emojiimg{{{png_filename}}}"
+                    # Use standard LaTeX command form in both code and text.
+                    # In code blocks, our Verbatim environment allows commands
+                    # (commandchars=\\{\\}) so this will render inline images.
+                    return f"\\emojiimg{{{png_filename}}}"
 
                 # Return original emoji if PNG not available
                 return emoji
@@ -253,9 +253,8 @@ class EmojiHandler:
 
     def replace_emoji_in_code(self, text: str) -> str:
         """
-        Replace emoji in code blocks (uses code-safe syntax).
-
-        This is a convenience wrapper for replace_emoji_in_text(text, in_code=True).
+        Replace emoji in code blocks. Uses standard LaTeX form too so that
+        Highlighting/Verbatim can render images inline.
 
         Args:
             text: Code text containing emoji

@@ -1,6 +1,7 @@
 """Main PDF converter coordinating all components."""
 
 import logging
+import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -176,6 +177,24 @@ class RepoPDFConverter:
                 except Exception as e:
                     logger.warning(f"Failed to process {file_path}: {e}")
                     # Continue with other files
+
+        # Final scrub: remove any remaining remote images to prevent Pandoc fetching
+        try:
+            import re
+            content = temp_md.read_text(encoding="utf-8")
+            # Remove Markdown inline remote images
+            content = re.sub(
+                r"!\[[^\]]*\]\((https?://[^\s)]+)(\s+\"[^\"]*\")?\)",
+                "",
+                content,
+            )
+            # Remove HTML remote images
+            content = re.sub(
+                r"<img[^>]+src=\"https?://[^\"]+\"[^>]*>", "", content, flags=re.IGNORECASE
+            )
+            temp_md.write_text(content, encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Final remote image scrub failed: {e}")
 
         return temp_md
 
@@ -378,6 +397,11 @@ class RepoPDFConverter:
             "-V",
             "date=\\today",
         ]
+
+        # Ensure Pandoc can find images referenced relative to the repo root
+        # and those generated/copied under temp_dir (current working directory).
+        resource_paths = [str(self.temp_dir), str(self.repo_path)]
+        cmd.extend(["--resource-path", os.pathsep.join(resource_paths)])
 
         logger.info(f"Running Pandoc: {' '.join(cmd)}")
 

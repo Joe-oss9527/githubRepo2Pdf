@@ -57,13 +57,15 @@ class MarkdownProcessor:
 
         # 2. Process reference-style links
         reference_links = self._extract_reference_links(content)
-        content = self._process_reference_images(content, reference_links)
+        content = self._process_reference_images(
+            content, reference_links, source_file, repo_root
+        )
 
         # 3. Process inline images
         content = self._process_inline_images(content, source_file, repo_root)
 
         # 4. Process HTML image tags
-        content = self._process_html_images(content)
+        content = self._process_html_images(content, source_file, repo_root)
 
         # 5. Process inline SVG
         content = self._process_inline_svg(content)
@@ -76,6 +78,9 @@ class MarkdownProcessor:
 
         # 8. Escape YAML delimiters
         content = self._escape_yaml_delimiters(content)
+
+        # 9. Final scrub of any remaining remote images to avoid Pandoc fetching
+        content = self._remove_residual_remote_images(content)
 
         return content
 
@@ -104,7 +109,11 @@ class MarkdownProcessor:
         return reference_links
 
     def _process_reference_images(
-        self, content: str, reference_links: Dict[str, Dict[str, Optional[str]]]
+        self,
+        content: str,
+        reference_links: Dict[str, Dict[str, Optional[str]]],
+        source_file: Optional[Path],
+        repo_root: Optional[Path],
     ) -> str:
         """Process reference-style image links."""
 
@@ -137,7 +146,15 @@ class MarkdownProcessor:
                     return f'![{alt}]({new_path} "{title}")'
                 return f"![{alt}]({new_path})"
 
-            # Keep other images as-is
+            # Normalize other local images to temp images directory (flattened)
+            img_path = self._resolve_image_path(url, source_file, repo_root)
+            if img_path and img_path.exists():
+                normalized = f"images/{img_path.name}"
+                if title:
+                    return f'![{alt}]({normalized} "{title}")'
+                return f"![{alt}]({normalized})"
+
+            # Fallback: keep as-is
             if title:
                 return f'![{alt}]({url} "{title}")'
             return f"![{alt}]({url})"
@@ -182,15 +199,11 @@ class MarkdownProcessor:
             if not path.startswith(("http://", "https://")):
                 img_path = self._resolve_image_path(path, source_file, repo_root)
                 if img_path and img_path.exists():
-                    # Use relative path from repo root
-                    if repo_root:
-                        try:
-                            rel_path = img_path.relative_to(repo_root)
-                            if title:
-                                return f'![{alt}]({rel_path} "{title}")'
-                            return f"![{alt}]({rel_path})"
-                        except ValueError:
-                            pass
+                    # Normalize to temp images directory (flattened) to align with LaTeX \graphicspath
+                    normalized = f"images/{img_path.name}"
+                    if title:
+                        return f'![{alt}]({normalized} "{title}")'
+                    return f"![{alt}]({normalized})"
                 else:
                     # Image not found locally, remove the reference to avoid Pandoc error
                     logger.warning(f"Image not found, removing reference: {path}")
@@ -250,8 +263,16 @@ class MarkdownProcessor:
         logger.warning(f"Could not resolve image path: {img_path}")
         return None
 
-    def _process_html_images(self, content: str) -> str:
-        """Process HTML <img> tags and convert to Markdown."""
+    def _process_html_images(
+        self, content: str, source_file: Optional[Path], repo_root: Optional[Path]
+    ) -> str:
+        """Process HTML <img> tags and convert to Markdown.
+
+        - Resolves local paths (including repo-root absolute like /images/...) against
+          the repo so Pandoc can locate them.
+        - Downloads remote images when enabled.
+        - Converts local SVG images to PNG via the image converter cache.
+        """
 
         def process_html_image(match: re.Match) -> str:
             tag = match.group(0)
@@ -267,28 +288,48 @@ class MarkdownProcessor:
             if not src:
                 return ""
 
-            # Handle remote images (keep URL or download)
+            # Handle remote images (download; if blocked, drop to avoid Pandoc fetching)
             if src.startswith(("http://", "https://")):
                 # Download remote image
                 new_path = self.image_converter.download_remote_image(src)
                 if new_path:
                     return f"![{alt}]({new_path})"
-                # If download fails, keep original URL
-                return f"![{alt}]({src})"
+                # If download fails (e.g., no network), drop the image to prevent Pandoc errors
+                return ""
 
-            # Handle local SVG
-            if src.lower().endswith(".svg"):
+            # Resolve local path relative to source file and repo root
+            resolved = self._resolve_image_path(src, source_file, repo_root)
+            if not resolved:
+                logger.warning(f"Could not resolve HTML image path: {src}")
+                return ""  # drop unresolved image to avoid Pandoc failure
+
+            # Handle local SVG via converter (returns images/<hash>.png)
+            if resolved.suffix.lower() == ".svg":
                 new_src = self.image_converter.convert_image_to_png(
-                    Path(src), self.config.project_root
+                    resolved, repo_root or self.config.project_root
                 )
                 return f"![{alt}]({new_src})"
 
-            # For other local images, convert to Markdown
-            return f"![{alt}]({src})"
+            # Normalize other local images to temp images directory (flattened)
+            normalized = f"images/{resolved.name}"
+            return f"![{alt}]({normalized})"
 
         return re.sub(
             r"<img\s+[^>]+>", process_html_image, content, flags=re.IGNORECASE
         )
+
+    def _remove_residual_remote_images(self, content: str) -> str:
+        """
+        Remove any leftover remote images that earlier passes didn't catch.
+
+        This prevents Pandoc from trying to fetch URLs during PDF build, which
+        can fail in restricted environments and produce broken temp files.
+        """
+        # Remove Markdown inline remote images: ![alt](http...)
+        content = re.sub(r"!\[[^\]]*\]\((https?://[^\s)]+)(\s+\"[^\"]*\")?\)", "", content)
+        # Remove HTML remote images: <img src="http...">
+        content = re.sub(r"<img[^>]+src=\"https?://[^\"]+\"[^>]*>", "", content, flags=re.IGNORECASE)
+        return content
 
     def _process_inline_svg(self, content: str) -> str:
         """Process inline <svg> tags."""
@@ -299,7 +340,8 @@ class MarkdownProcessor:
             if self.image_converter.is_valid_svg(svg_content):
                 png_filename = self.image_converter.convert_svg_content_to_png(svg_content)
                 if png_filename:
-                    return f"![](images/emoji/{png_filename})"
+                    # Inline SVGs are converted to the shared images/ cache directory
+                    return f"![](images/{png_filename})"
 
             return match.group(0)
 
